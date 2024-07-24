@@ -1,1 +1,3 @@
-# rl-market-making
+# Reinforcement Learning for Execution Optimization on Market Making
+
+Reinforcement learning for execution optimization - this project aims to explore and develop a reinforcement learning (RL) model focused on market making and execution optimization in the domain of financial trading. The goal is to create an algorithm that can efficiently balance the dual objectives of inventory risk management and best execution under dynamic market conditions.
