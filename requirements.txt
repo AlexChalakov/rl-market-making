@@ -1,0 +1,6 @@
+tensorflow
+tensorforce
+gym
+pandas
+numpy
+matplotlib

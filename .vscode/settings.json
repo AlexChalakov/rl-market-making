@@ -1,0 +1,9 @@
+{
+    "python.analysis.extraPaths": [
+        "./environment",
+        "./data",
+        "./agent",
+        "./network",
+        "./utils",
+    ]
+}
