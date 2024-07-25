@@ -1,5 +1,5 @@
 import tensorflow as tf
-from keras.optimizers import Adam
+from keras.optimizers.legacy import Adam
 import numpy as np
 
 class PPOAgent:

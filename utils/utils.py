@@ -1,7 +1,7 @@
 import pandas as pd
 import numpy as np
 
-def load_lobster_data(message_file, orderbook_file):
+def load_lobster_data(message_file, orderbook_file, limit = None):
     # Load the message and order book files
     messages = pd.read_csv(message_file, header=None)
     orderbook = pd.read_csv(orderbook_file, header=None)
@@ -9,12 +9,17 @@ def load_lobster_data(message_file, orderbook_file):
     # Assign column names based on the LOBSTER format
     messages.columns = ['Time', 'Type', 'Order ID', 'Size', 'Price', 'Direction']
     orderbook_columns = []
-    for level in range(1, 11):  # Assuming 10 levels, adjust if necessary
+    for level in range(1, 6):  # Assuming 5 levels, adjust if necessary
         orderbook_columns += [f'Ask Price {level}', f'Ask Size {level}', f'Bid Price {level}', f'Bid Size {level}']
     orderbook.columns = orderbook_columns
     
     # Merge messages and order book data
     data = pd.concat([messages, orderbook], axis=1)
+
+    # Put limit on the number of rows if specified
+    if limit is not None and len(data) > limit:
+        data = data.sample(n=limit, random_state=42).sort_index()
+
     return data
 
 def preprocess_data(lob_data):

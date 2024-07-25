@@ -16,12 +16,16 @@ class ContinuousMarketEnv(BaseMarketEnv):
 
     def step(self, action):
         # Apply action logic here (e.g., update inventory, execute trades)
+        # action[0] could be the price adjustment for bid, action[1] for ask
+        print(f"Action taken: {action}")
         done = self.advance_step()
         reward = self.calculate_reward(action)
         state = self.get_current_state()
+        print(f"Next state: {state}, Reward: {reward}, Done: {done}")
         return state, reward, done, {}
 
     def calculate_reward(self, action):
         # Example reward function: reward based on inventory management and execution quality
-        reward = -np.abs(action[0])  # Penalize large actions
+        reward = -np.abs(action[0] - action[1])  # Penalize large actions
+        print(f"Calculated reward: {reward} for action: {action}")
         return reward

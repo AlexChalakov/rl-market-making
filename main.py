@@ -6,9 +6,11 @@ from network.network import create_cnn_attention_model
 
 def main():
 # Load and preprocess data
-    message_file = 'data/AAPL_2012-06-21_34200000_57600000_message_10.csv'
-    orderbook_file = 'data/AAPL_2012-06-21_34200000_57600000_orderbook_10.csv'
-    lob_data = load_lobster_data(message_file, orderbook_file)
+    message_file = 'data/level 5/AAPL_2012-06-21_34200000_57600000_message_5.csv'
+    orderbook_file = 'data/level 5/AAPL_2012-06-21_34200000_57600000_orderbook_5.csv'
+    limit = 10000
+
+    lob_data = load_lobster_data(message_file, orderbook_file, limit)
     processed_data = preprocess_data(lob_data)
     print("Loading and preprocessing data...")
 
@@ -24,7 +26,7 @@ def main():
     agent = PPOAgent(env, network)
 
     # Training loop
-    num_episodes = 100  # Adjust as needed, basic is 1000
+    num_episodes = 10  # Adjust as needed, basic is 1000
     for episode in range(num_episodes):
         state = env.reset()
         done = False
