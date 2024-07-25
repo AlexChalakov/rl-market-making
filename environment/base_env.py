@@ -1,3 +1,4 @@
+from abc import abstractmethod
 import gym
 from gym import spaces
 import numpy as np
@@ -16,9 +17,11 @@ class BaseMarketEnv(gym.Env):
         self.current_step = 0
         return self.data.iloc[self.current_step].values
 
+    @abstractmethod
     def step(self, action):
         raise NotImplementedError("This method should be overridden by subclasses")
 
+    @abstractmethod
     def calculate_reward(self, action):
         raise NotImplementedError("This method should be overridden by subclasses")
 

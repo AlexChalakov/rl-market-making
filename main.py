@@ -10,9 +10,9 @@ def main():
     orderbook_file = 'data/level 5/AAPL_2012-06-21_34200000_57600000_orderbook_5.csv'
     limit = 10000
 
+    print("Loading and preprocessing data...")
     lob_data = load_lobster_data(message_file, orderbook_file, limit)
     processed_data = preprocess_data(lob_data)
-    print("Loading and preprocessing data...")
 
     # Initialize environment
     print("Initializing Environment, NN and Agent.")
