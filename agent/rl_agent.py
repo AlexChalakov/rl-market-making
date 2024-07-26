@@ -19,8 +19,7 @@ class PPOAgent:
     # The act method takes the current state as input and returns the action to take using the policy network.
     def act(self, state):
         state = np.expand_dims(state, axis=0)
-        action_probs = self.policy_network.predict(state)[0]
-        action = np.random.choice(len(action_probs), p=action_probs)
+        action = self.policy_network.predict(state)[0]
         return action
 
     # The observe method takes the state, action, reward, next state, and done flag as input 

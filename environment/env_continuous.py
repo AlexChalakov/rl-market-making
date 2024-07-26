@@ -21,7 +21,7 @@ class ContinuousMarketEnv(BaseMarketEnv):
         self.inventory = 0
         self.cash = 0
         self.trades = []
-        return super().data.iloc[self.current_step].values
+        return self.data.iloc[self.current_step].values
 
     # The step method takes an action as input and returns the next state, reward, done flag, and additional information.
     # Simulates order executions. 
@@ -29,8 +29,8 @@ class ContinuousMarketEnv(BaseMarketEnv):
     # if the ask adjustment is enough to sell at the best ask price, it sells.
     def step(self, action):
         bid_adjustment, ask_adjustment = action
-        best_bid = self.data.iloc[self.current_step, "Bid Price 1"]
-        best_ask = self.data.iloc[self.current_step, "Ask Price 1"]
+        best_bid = self.data.iloc[self.current_step]['Bid Price 1']
+        best_ask = self.data.iloc[self.current_step]['Ask Price 1']
 
         # Simulate market order execution
         # best_bid is highest bid price available, best_ask is lowest ask price available
@@ -52,14 +52,14 @@ class ContinuousMarketEnv(BaseMarketEnv):
         done = self.advance_step()
         reward = self.calculate_reward()
         state = self.get_current_state()
-        print(f"Next state: {state}, Reward: {reward}, Done: {done}")
+        #print(f"Next state: {state}, Reward: {reward}, Done: {done}")
         return state, reward, done, {}
 
     # Designed to balance the inventory and execution quality.
     def calculate_reward(self):
         # the total value of the agent's holdings is calculated as the sum of cash and inventory multiplied by the best bid price.
         # Calculate the Profit and Loss (PnL) based on the current inventory and cash position.
-        pnl = self.cash + self.inventory * self.data.iloc[self.current_step, "Bid Price 1"]
+        pnl = self.cash + self.inventory * self.data.iloc[self.current_step]['Bid Price 1']
 
         # Penalize the agent for holding excess inventory by calculating the inventory risk.
         inventory_risk = abs(self.inventory) * 0.1
