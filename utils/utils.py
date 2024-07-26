@@ -23,12 +23,24 @@ def load_lobster_data(message_file, orderbook_file, limit = None):
     return data
 
 def preprocess_data(lob_data):
+    # Handle missing data if any
+    lob_data = lob_data.fillna(0)
+    
     # Normalize prices and volumes
     for col in lob_data.columns:
         if 'Price' in col:
-            lob_data[col] = (lob_data[col] - lob_data[col].min()) / (lob_data[col].max() - lob_data[col].min())
+            max_val = lob_data[col].max()
+            min_val = lob_data[col].min()
+            if max_val != min_val:
+                lob_data[col] = (lob_data[col] - min_val) / (max_val - min_val)
+            else:
+                lob_data[col] = 0  # If max equals min, set normalized value to 0
         if 'Size' in col:
-            lob_data[col] = lob_data[col] / lob_data[col].max()
+            max_val = lob_data[col].max()
+            if max_val != 0:
+                lob_data[col] = lob_data[col] / max_val
+            else:
+                lob_data[col] = 0  # If max is 0, set normalized value to 0
     
     # Calculate additional features
     lob_data['osi'] = lob_data['Bid Size 1'] / (lob_data['Bid Size 1'] + lob_data['Ask Size 1'])
