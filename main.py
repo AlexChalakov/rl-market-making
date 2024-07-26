@@ -2,7 +2,7 @@ import pandas as pd
 from utils.utils import preprocess_data, load_lobster_data
 from environment.env_continuous import ContinuousMarketEnv
 from agent.rl_agent import PPOAgent
-from network.network import create_cnn_attention_model
+from network.network import create_cnn_attention_policy_network, create_cnn_attention_value_network
 
 def main():
 # Load and preprocess data
@@ -20,10 +20,11 @@ def main():
 
     # Define neural network
     input_shape = (processed_data.shape[1], 1)  # Adjust based on your data shape
-    network = create_cnn_attention_model(input_shape)
+    policy_network = create_cnn_attention_policy_network(input_shape)
+    value_network = create_cnn_attention_value_network(input_shape)
 
     # Initialize agent
-    agent = PPOAgent(env, network)
+    agent = PPOAgent(env, policy_network, value_network)
 
     # Training loop
     num_episodes = 10  # Adjust as needed, basic is 1000
