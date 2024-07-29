@@ -43,10 +43,12 @@ class ContinuousMarketEnv(BaseMarketEnv):
             self.inventory += 1
             self.cash -= executed_bid
             self.trades.append(("BUY", executed_bid))
+            print(f"BUY: {executed_bid}")
         if executed_ask <= best_ask:
             self.inventory -= 1
             self.cash += executed_ask
             self.trades.append(("SELL", executed_ask))
+            print(f"SELL: {executed_ask}")
 
         # Calculate reward based on the action taken
         done = self.advance_step()
