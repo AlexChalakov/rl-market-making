@@ -43,12 +43,12 @@ class ContinuousMarketEnv(BaseMarketEnv):
             self.inventory += 1
             self.cash -= executed_bid
             self.trades.append(("BUY", executed_bid))
-            print(f"BUY: {executed_bid}")
+            print(f"BUY: {executed_bid}, Inventory: {self.inventory}, Cash: {self.cash}")
         if executed_ask <= best_ask:
             self.inventory -= 1
             self.cash += executed_ask
             self.trades.append(("SELL", executed_ask))
-            print(f"SELL: {executed_ask}")
+            print(f"SELL: {executed_ask}, Inventory: {self.inventory}, Cash: {self.cash}")
 
         # Calculate reward based on the action taken
         done = self.advance_step()
@@ -76,7 +76,6 @@ class ContinuousMarketEnv(BaseMarketEnv):
         else:
             execution_quality_reward = 0
 
-        
         # The reward is a combination of the PnL, inventory risk, and execution quality components.
         reward = pnl - inventory_risk + execution_quality_reward
         return reward

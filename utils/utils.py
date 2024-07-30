@@ -15,6 +15,8 @@ def load_lobster_data(message_file, orderbook_file, limit = None):
     
     # Merge messages and order book data
     data = pd.concat([messages, orderbook], axis=1)
+    # To visualise the data
+    print(data.head())
 
     # Put limit on the number of rows if specified
     if limit is not None and len(data) > limit:
@@ -25,25 +27,21 @@ def load_lobster_data(message_file, orderbook_file, limit = None):
 def preprocess_data(lob_data):
     # Handle missing data if any
     lob_data = lob_data.fillna(0)
-    
-    # Normalize prices and volumes
+
+    # Normalize prices by dividing by 10,000 to get back to dollar values
     for col in lob_data.columns:
         if 'Price' in col:
-            max_val = lob_data[col].max()
-            min_val = lob_data[col].min()
-            if max_val != min_val:
-                lob_data[col] = (lob_data[col] - min_val) / (max_val - min_val)
-            else:
-                lob_data[col] = 0  # If max equals min, set normalized value to 0
+            lob_data[col] = lob_data[col] / 10000  # Convert to original dollar value
+
+    # Normalize sizes by the maximum size observed in the dataset
+    max_size = lob_data[[col for col in lob_data.columns if 'Size' in col]].max().max()
+    for col in lob_data.columns:
         if 'Size' in col:
-            max_val = lob_data[col].max()
-            if max_val != 0:
-                lob_data[col] = lob_data[col] / max_val
-            else:
-                lob_data[col] = 0  # If max is 0, set normalized value to 0
-    
+            lob_data[col] = lob_data[col] / max_size  # Normalize by maximum size
+
     # Calculate additional features
     lob_data['osi'] = lob_data['Bid Size 1'] / (lob_data['Bid Size 1'] + lob_data['Ask Size 1'])
     lob_data['rv'] = lob_data['Size'] / lob_data['Size'].mean()
-    
+
+    print(lob_data.head())
     return lob_data
