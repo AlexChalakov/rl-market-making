@@ -1,6 +1,7 @@
 import tensorflow as tf
 from keras.optimizers.legacy import Adam
 import numpy as np
+import random
 
 class PPOAgent:
     def __init__(self, env, policy_network, value_network, learning_rate=1e-4, gamma=0.99, clip_range=0.2, epochs=10, batch_size=64, lambda_=0.95):
@@ -61,3 +62,27 @@ class PPOAgent:
     def save(self, policy_path, value_path):
         self.policy_network.save(policy_path)
         self.value_network.save(value_path)
+        
+class QLearningAgent:
+    def __init__(self, env, state_size, action_size, bins=10, learning_rate=0.1, gamma=0.99, epsilon=0.1):
+        self.env = env
+        self.state_size = state_size
+        self.action_size = action_size
+        self.bins = bins
+        self.lr = learning_rate
+        self.gamma = gamma
+        self.epsilon = epsilon
+        self.q_table = np.zeros((state_size, action_size))
+        
+    
+    #  The act method selects an random action if its smailler than epsilon or it return the action with the highest Q-value for the current state 
+    def act(self, state):
+        if np.random.rand() <= self.epsilon:
+            return random.choice(range(self.action_size))
+        return np.argmax(self.q_table[discretized_state])
+    
+    # The observe method takes the state, action, reward, next state, and done flag as input 
+    def observe(self, state, action, reward, next_state, done):
+        q_update = reward + self.gamma * np.max(self.q_table[next_state]) * (1 - done)
+        # Updates the Q-value for the current state-action pair using the learning rate.
+        self.q_table[state, action] += self.lr * (q_update - self.q_table[state, action])
