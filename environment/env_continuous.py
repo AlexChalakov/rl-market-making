@@ -1,5 +1,5 @@
 import numpy as np
-from environment.base_env import BaseMarketEnv
+from base_env import BaseMarketEnv
 from gym import spaces
 
 # In a continuous environment, the actions the agent can take are not limited to a finite set but can take any value within a specified range. 

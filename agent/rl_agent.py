@@ -2,6 +2,11 @@ import tensorflow as tf
 from keras.optimizers.legacy import Adam
 import numpy as np
 import random
+from keras.models import Sequential
+from keras.layers import Dense, Flatten, Conv2D
+from keras.optimizers import Adam
+from configurations import LOGGER
+import os
 
 class PPOAgent:
     def __init__(self, env, policy_network, value_network, learning_rate=1e-4, gamma=0.99, clip_range=0.2, epochs=10, batch_size=64, lambda_=0.95):
@@ -86,3 +91,4 @@ class QLearningAgent:
         q_update = reward + self.gamma * np.max(self.q_table[next_state]) * (1 - done)
         # Updates the Q-value for the current state-action pair using the learning rate.
         self.q_table[state, action] += self.lr * (q_update - self.q_table[state, action])
+        
