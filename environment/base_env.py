@@ -22,7 +22,7 @@ class BaseMarketEnv(gym.Env):
         raise NotImplementedError("This method should be overridden by subclasses")
 
     @abstractmethod
-    def calculate_reward(self, action):
+    def calculate_reward(self):
         raise NotImplementedError("This method should be overridden by subclasses")
 
     def get_current_state(self):

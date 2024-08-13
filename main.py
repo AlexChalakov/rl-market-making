@@ -1,11 +1,22 @@
+import random
+import numpy as np
 import pandas as pd
+import tensorflow as tf
 from utils.utils import preprocess_data, load_lobster_data
 from environment.env_continuous import ContinuousMarketEnv
 from agent.rl_agent import PPOAgent
 from network.network import create_cnn_attention_policy_network, create_cnn_attention_value_network
 
+def set_seed(seed=42):
+    np.random.seed(seed)
+    random.seed(seed)
+    tf.random.set_seed(seed)
+
 def main():
-# Load and preprocess data
+    # Set random seed for reproducibility
+    set_seed(42)
+
+    # Load and preprocess data
     message_file = 'data/level 5/AAPL_2012-06-21_34200000_57600000_message_5.csv'
     orderbook_file = 'data/level 5/AAPL_2012-06-21_34200000_57600000_orderbook_5.csv'
     limit = 10000

@@ -3,7 +3,7 @@ from keras.optimizers.legacy import Adam
 import numpy as np
 
 class PPOAgent:
-    def __init__(self, env, policy_network, value_network, learning_rate=1e-4, gamma=0.99, clip_range=0.2, epochs=10, batch_size=64, lambda_=0.95):
+    def __init__(self, env, policy_network, value_network, learning_rate=3e-4, gamma=0.99, clip_range=0.2, epochs=10, batch_size=64, lambda_=0.95):
         self.env = env
         self.policy_network = policy_network
         self.value_network = value_network

@@ -18,8 +18,8 @@ class ContinuousMarketEnv(BaseMarketEnv):
     # It resets the current step, inventory, cash, and trade history.
     def reset(self):
         self.current_step = 0
-        self.inventory = 0
-        self.cash = 0
+        self.inventory = 10
+        self.cash = 10000
         self.trades = []
         return self.data.iloc[self.current_step].values
 
@@ -31,6 +31,11 @@ class ContinuousMarketEnv(BaseMarketEnv):
         bid_adjustment, ask_adjustment = action
         best_bid = self.data.iloc[self.current_step]['Bid Price 1']
         best_ask = self.data.iloc[self.current_step]['Ask Price 1']
+        spread = best_ask - best_bid
+
+        # Normalize adjustments by the spread size
+        bid_adjustment = bid_adjustment * spread / 2
+        ask_adjustment = ask_adjustment * spread / 2
 
         # Simulate market order execution
         # best_bid is highest bid price available, best_ask is lowest ask price available
@@ -39,43 +44,59 @@ class ContinuousMarketEnv(BaseMarketEnv):
         executed_bid = best_bid + bid_adjustment
         executed_ask = best_ask + ask_adjustment
 
-        if executed_bid >= best_bid:
+        # Buying action (if there's enough cash and the bid adjustment leads to a valid buy)
+        if executed_bid <= self.cash:
             self.inventory += 1
             self.cash -= executed_bid
             self.trades.append(("BUY", executed_bid))
+            action_taken = True
             print(f"BUY: {executed_bid}, Inventory: {self.inventory}, Cash: {self.cash}")
-        if executed_ask <= best_ask:
+
+        # Selling action (if there's enough inventory and the ask adjustment leads to a valid sell)
+        if self.inventory > 0:
             self.inventory -= 1
             self.cash += executed_ask
             self.trades.append(("SELL", executed_ask))
+            action_taken = True
             print(f"SELL: {executed_ask}, Inventory: {self.inventory}, Cash: {self.cash}")
 
-        # Calculate reward based on the action taken
         done = self.advance_step()
         reward = self.calculate_reward()
+
+        # Add a small positive reward for taking an action
+        if action_taken:
+            reward += 0.01  # Small reward for making a trade
+
         state = self.get_current_state()
-        #print(f"Next state: {state}, Reward: {reward}, Done: {done}")
         return state, reward, done, {}
 
     # Designed to balance the inventory and execution quality.
     def calculate_reward(self):
-        # the total value of the agent's holdings is calculated as the sum of cash and inventory multiplied by the best bid price.
-        # Calculate the Profit and Loss (PnL) based on the current inventory and cash position.
         pnl = self.cash + self.inventory * self.data.iloc[self.current_step]['Bid Price 1']
 
-        # Penalize the agent for holding excess inventory by calculating the inventory risk.
-        inventory_risk = abs(self.inventory) * 0.1
+        # Apply a scaling factor to reduce the overall reward magnitude
+        scaling_factor = 0.001  # Adjust this factor as needed to scale down rewards
 
-        # Calculate the execution quality
-        # We judge it by comparing it to the mid price, which is the average of the best bid and ask prices.
-        executed_prices = [trade[1] for trade in self.trades]   # Extract executed prices from trade history
+        # Penalize if inventory is zero (to encourage maintaining inventory)
+        inventory_penalty = 0
+        if self.inventory == 0:
+            inventory_penalty = 1000 * scaling_factor # Significant penalty for having zero inventory
+
+        # Reward for maintaining some inventory
+        balance_reward = max(self.inventory, 0) * 0.1 * scaling_factor # Small reward for maintaining inventory
+
+        # Cash management penalty (discourage negative cash) but less severe
+        cash_penalty = max(0, -self.cash) * 0.005 * scaling_factor # Reduced penalty for negative cash
+
+        # Execution quality reward
+        executed_prices = [trade[1] for trade in self.trades]
         if executed_prices:
-            average_execution_price = np.mean(executed_prices)  # Calculate average execution price
-            mid_price = (self.data.iloc[self.current_step]['Bid Price 1'] + self.data.iloc[self.current_step]['Ask Price 1']) / 2 # Calculate mid price
-            execution_quality_reward = -abs(average_execution_price - mid_price) * 0.1 # Penalize deviation from mid price / the closer the execution price to the mid price, the higher the reward
+            average_execution_price = np.mean(executed_prices)
+            mid_price = (self.data.iloc[self.current_step]['Bid Price 1'] + self.data.iloc[self.current_step]['Ask Price 1']) / 2
+            execution_quality_reward = -abs(average_execution_price - mid_price) * 0.02 * scaling_factor # Reduced impact of execution quality
         else:
             execution_quality_reward = 0
 
-        # The reward is a combination of the PnL, inventory risk, and execution quality components.
-        reward = pnl - inventory_risk + execution_quality_reward
+        # Total reward
+        reward = (pnl - inventory_penalty - cash_penalty + execution_quality_reward + balance_reward) * scaling_factor
         return reward
