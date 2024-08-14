@@ -3,11 +3,11 @@ import random
 import numpy as np
 import pandas as pd
 import tensorflow as tf
-from utils.utils import preprocess_data, load_lobster_data
+import matplotlib.pyplot as plt
 from environment.env_continuous import ContinuousMarketEnv
 from agent.rl_agent import PPOAgent
 from network.network import create_cnn_attention_policy_network, create_cnn_attention_value_network
-import matplotlib.pyplot as plt
+from utils.utils import load_lobster_data, preprocess_lobster_data, save_preprocessed_data 
 
 def set_seed(seed=42):
     np.random.seed(seed)
@@ -18,14 +18,29 @@ def main():
     # Set random seed for reproducibility
     set_seed(42)
 
-    # Load and preprocess data
+    # *** Default Option: Load Preprocessed Crypto Limit Order Book (LOB) Data ***
+    # This option is active by default, loading the preprocessed crypto order book data
+
+    #data_file = os.path.join('data', 'data_pipeline', 'crypto_lob_data.csv')
+    #if not os.path.exists(data_file):
+        #raise FileNotFoundError(f"The file {data_file} does not exist. Please run the data pipeline first.")
+
+    #print("Loading preprocessed crypto order book data...")
+    #processed_data = pd.read_csv(data_file)
+
+    # *** Alternative Option: Load and Preprocess LOBSTER Data ***
+    # Uncomment the following lines to use the LOBSTER data
+
     message_file = 'data/experimentation/level 5/AAPL_2012-06-21_34200000_57600000_message_5.csv'
     orderbook_file = 'data/experimentation/level 5/AAPL_2012-06-21_34200000_57600000_orderbook_5.csv'
     limit = 10000
-
-    print("Loading and preprocessing data...")
+    
+    print("Loading and preprocessing LOBSTER data...")
     lob_data = load_lobster_data(message_file, orderbook_file, limit)
-    processed_data = preprocess_data(lob_data)
+    processed_data = preprocess_lobster_data(lob_data)
+
+    # Save the preprocessed data
+    save_preprocessed_data(processed_data, message_file, orderbook_file)
 
     # Initialize environment
     print("Initializing Environment, NN and Agent.")

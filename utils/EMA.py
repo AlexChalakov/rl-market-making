@@ -76,7 +76,7 @@ def apply_ema_all_data(
     Apply exponential moving average to entire data set in a single batch.
     :param ema: EMA handler; if None, no EMA is applied
     :param data: data set to smooth
-    :return: (np.array) smoothed data set, if ema is provided
+    :return: (pd.DataFrame) smoothed data set, if ema is provided
     """
     if ema is None:
         return data
@@ -85,24 +85,24 @@ def apply_ema_all_data(
     labels = data.columns.tolist()
 
     if isinstance(ema, ExponentialMovingAverage):
-        for row in data.values:
-            ema.step(value=row)
+        for value in data['Midpoint'].values:  # Apply EMA to 'Midpoint' column
+            ema.step(value=value)
             smoothed_data.append(ema.value)
-        smoothed_data = np.asarray(smoothed_data, dtype=np.float32)
-        return pd.DataFrame(smoothed_data, columns=labels, index=data.index)
+        data['Midpoint_EMA'] = smoothed_data  # Add new column with EMA values
+        return data
     elif isinstance(ema, list):
-        labels = [f'{label}_{e.alpha}' for e in ema for label in labels]
-        for row in data.values:
-            tmp_row = []
+        # Assuming you want to apply multiple EMA values to different columns
+        for column in data.columns:
+            smoothed_data = []
             for e in ema:
-                e.step(value=row)
-                tmp_row.append(e.value)
-            smoothed_data.append(tmp_row)
-        smoothed_data = np.asarray(smoothed_data, dtype=np.float32).reshape(
-            data.shape[0], -1)
-        return pd.DataFrame(smoothed_data, columns=labels, index=data.index)
+                for value in data[column].values:
+                    e.step(value=value)
+                    smoothed_data.append(e.value)
+            data[f'{column}_EMA'] = smoothed_data
+        return data
     else:
-        raise ValueError(f"_apply_ema() --> unknown ema type: {type(ema)}")
+        raise ValueError(f"apply_ema_all_data() --> unknown ema type: {type(ema)}")
+
 
 
 def reset_ema(ema: Union[List[ExponentialMovingAverage], ExponentialMovingAverage, None]) -> \

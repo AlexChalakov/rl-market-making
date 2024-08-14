@@ -1,3 +1,4 @@
+import os
 import pandas as pd
 import numpy as np
 
@@ -24,7 +25,7 @@ def load_lobster_data(message_file, orderbook_file, limit = None):
 
     return data
 
-def preprocess_data(lob_data):
+def preprocess_lobster_data(lob_data):
     # Handle missing data if any
     lob_data = lob_data.fillna(0)
 
@@ -45,3 +46,14 @@ def preprocess_data(lob_data):
 
     print(lob_data.head())
     return lob_data
+
+def save_preprocessed_data(lob_data, message_file, orderbook_file):
+    # Get the directory of the original files
+    message_dir = os.path.dirname(message_file)
+    orderbook_dir = os.path.dirname(orderbook_file)
+    
+    # Save the processed data as a CSV in the same directory as the orderbook file
+    output_file = os.path.join(orderbook_dir, 'preprocessed_lobster_data.csv')
+    lob_data.to_csv(output_file, index=False)
+    
+    print(f"Preprocessed data saved to {output_file}")
