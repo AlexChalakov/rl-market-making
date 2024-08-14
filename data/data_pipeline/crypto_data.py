@@ -8,18 +8,11 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')
 import datetime
 import pandas as pd
 import numpy as np
-import ccxt
 from sklearn.preprocessing import StandardScaler
 from utils.EMA import ExponentialMovingAverage, apply_ema_all_data
 
 # Configuration Constants
-MAX_BOOK_ROWS = 20  # Number of levels in the order book to capture
-DATA_PATH = "data/data_pipeline"  # Updated path to save data files
-TIMEZONE = datetime.timezone.utc  # Set timezone to UTC for consistency
-EXCHANGE = ccxt.binance()  # Binance exchange for fetching order book data
-EMA_ALPHA = 0.99  # Alpha value for EMA
-INTERVAL = 1  # Interval in seconds between LOB snapshots
-DURATION = 180  # Total duration in seconds for data collection
+from configurations import MAX_BOOK_ROWS, DATA_PATH, EXCHANGE, EMA_ALPHA, INTERVAL, DURATION
 
 class DataPipeline:
     def __init__(self, max_book_rows=MAX_BOOK_ROWS, ema_alpha=EMA_ALPHA):
@@ -87,13 +80,25 @@ class DataPipeline:
 
     def preprocess_data(self, data):
         """
-        Preprocess the raw order book data, including EMA smoothing.
+        Preprocess the raw order book data, including EMA smoothing and feature engineering.
 
         :param data: DataFrame containing the raw order book data.
         :return: Preprocessed DataFrame.
         """
         # Calculate Midpoint from the best bid and ask prices
         data['Midpoint'] = (data['BidPrice_0'] + data['AskPrice_0']) / 2
+
+        # Calculate the bid-ask spread
+        data['Spread'] = data['AskPrice_0'] - data['BidPrice_0']
+
+        # Calculate Order Size Imbalance (OSI)
+        data['OrderSizeImbalance'] = (data['BidVolume_0'] - data['AskVolume_0']) / (data['BidVolume_0'] + data['AskVolume_0'])
+
+        # Calculate Volume-Weighted Average Price (VWAP)
+        data['VWAP'] = ((data['BidPrice_0'] * data['BidVolume_0']) + (data['AskPrice_0'] * data['AskVolume_0'])) / (data['BidVolume_0'] + data['AskVolume_0'])
+
+        # Calculate Relative Volume (RV)
+        data['RelativeVolume'] = data['BidVolume_0'] + data['AskVolume_0']
 
         # Fill missing values
         data = data.fillna(method='ffill').fillna(method='bfill')

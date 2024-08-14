@@ -4,10 +4,10 @@ from abc import ABC, abstractmethod
 from collections import deque
 from typing import List, Tuple, Union
 
-from configurations import INDICATOR_WINDOW
-from EMA import ExponentialMovingAverage, load_ema
+import numpy as np
 
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from configurations import INDICATOR_WINDOW
+from utils.EMA import ExponentialMovingAverage, load_ema
 
 class Indicator(ABC):
 
@@ -107,7 +107,7 @@ class Indicator(ABC):
     @staticmethod
     def safe_divide(nom: float, denom: float) -> float:
         """
-        Safely perform divisions without throwing an 'divide by zero' exception.
+        Safely perform divisions without throwing a 'divide by zero' exception.
         :param nom: nominator
         :param denom: denominator
         :return: value
@@ -119,35 +119,16 @@ class Indicator(ABC):
         else:
             return nom / denom
 
-class IndicatorManager(object):
+class IndicatorManager:
     __slots__ = ['indicators']
 
     def __init__(self):
         """
-        Wrapper class to manage multiple indicators at the same time
-        (e.g., window size stacking)
-        # :param smooth_values: if TRUE, values returned are EMA smoothed, otherwise raw
-        #     values indicator values
+        Wrapper class to manage multiple indicators at the same time.
         """
         self.indicators = list()
 
-    def get_labels(self) -> list:
-        """
-        Get labels for each indicator being managed.
-        :return: List of label names
-        """
-        # return [label[0] for label in self.indicators]
-        labels = []
-        for label, indicator in self.indicators:
-            indicator_label = indicator.label
-            if isinstance(indicator_label, list):
-                labels.extend(indicator_label)
-            else:
-                labels.append(indicator_label)
-        return labels
-
-    def add(self, name_and_indicator: Tuple[str, Union[Indicator, ExponentialMovingAverage]]) \
-            -> None:
+    def add(self, name_and_indicator: Tuple[str, Union[Indicator, ExponentialMovingAverage]]) -> None:
         """
         Add indicator to the list to be managed.
         :param name_and_indicator: tuple(name, indicator)
@@ -155,36 +136,36 @@ class IndicatorManager(object):
         """
         self.indicators.append(name_and_indicator)
 
-    def delete(self, index: Union[int, None]) -> None:
+    def get_labels(self) -> list:
         """
-        Delete an indicator from the manager.
-        :param index: index to delete (int or str)
-        :return: (void)
+        Get labels for each indicator being managed.
+        :return: List of label names
         """
-        if isinstance(index, int):
-            del self.indicators[index]
-        else:
-            self.indicators.remove(index)
-
-    def pop(self, index: Union[int, None]) -> Union[float, None]:
-        """
-        Pop indicator from manager.
-        :param index: (int) index of indicator to pop
-        :return: (name, indicator)
-        """
-        if index is not None:
-            return self.indicators.pop(index)
-        else:
-            return self.indicators.pop()
+        labels = []
+        for label, indicator in self.indicators:
+            if isinstance(indicator, ExponentialMovingAverage):
+                labels.append(f"{label}_EMA")
+            else:
+                indicator_label = indicator.label
+                if isinstance(indicator_label, list):
+                    labels.extend(indicator_label)
+                else:
+                    labels.append(indicator_label)
+        return labels
 
     def step(self, **kwargs) -> None:
         """
-        Update indicator with new step through environment.
+        Update each indicator with new data.
         :param kwargs: Data passed to indicator for the update
         :return:
         """
-        for (name, indicator) in self.indicators:
-            indicator.step(**kwargs)
+        for name, indicator in self.indicators:
+            if isinstance(indicator, ExponentialMovingAverage):
+                indicator.step(value=kwargs.get('price'))
+            elif isinstance(indicator, RSI):
+                indicator.step(price=kwargs.get('price'))
+            elif isinstance(indicator, TnS):
+                indicator.step(buys=kwargs.get('buys'), sells=kwargs.get('sells'))
 
     def reset(self) -> None:
         """
@@ -208,91 +189,134 @@ class IndicatorManager(object):
                 values.append(indicator_value)
         return values
 
-class IndicatorManager(object):
-    __slots__ = ['indicators']
+class RSI(Indicator):
+    """
+    Price change momentum indicator. Note: Scaled to [-1, 1] and not [0, 100].
+    """
 
-    def __init__(self):
-        """
-        Wrapper class to manage multiple indicators at the same time
-        (e.g., window size stacking)
-        # :param smooth_values: if TRUE, values returned are EMA smoothed, otherwise raw
-        #     values indicator values
-        """
-        self.indicators = list()
+    def __init__(self, **kwargs):
+        super().__init__(label='rsi', **kwargs)
+        self.last_price = None
+        self.ups = self.downs = 0.
 
-    def get_labels(self) -> list:
-        """
-        Get labels for each indicator being managed.
-        :return: List of label names
-        """
-        # return [label[0] for label in self.indicators]
-        labels = []
-        for label, indicator in self.indicators:
-            indicator_label = indicator.label
-            if isinstance(indicator_label, list):
-                labels.extend(indicator_label)
-            else:
-                labels.append(indicator_label)
-        return labels
-
-    def add(self, name_and_indicator: Tuple[str, Union[Indicator, ExponentialMovingAverage]]) \
-            -> None:
-        """
-        Add indicator to the list to be managed.
-        :param name_and_indicator: tuple(name, indicator)
-        :return: (void)
-        """
-        self.indicators.append(name_and_indicator)
-
-    def delete(self, index: Union[int, None]) -> None:
-        """
-        Delete an indicator from the manager.
-        :param index: index to delete (int or str)
-        :return: (void)
-        """
-        if isinstance(index, int):
-            del self.indicators[index]
-        else:
-            self.indicators.remove(index)
-
-    def pop(self, index: Union[int, None]) -> Union[float, None]:
-        """
-        Pop indicator from manager.
-        :param index: (int) index of indicator to pop
-        :return: (name, indicator)
-        """
-        if index is not None:
-            return self.indicators.pop(index)
-        else:
-            return self.indicators.pop()
-
-    def step(self, **kwargs) -> None:
-        """
-        Update indicator with new step through environment.
-        :param kwargs: Data passed to indicator for the update
-        :return:
-        """
-        for (name, indicator) in self.indicators:
-            indicator.step(**kwargs)
+    def __str__(self):
+        return f"RSI: [ last_price = {self.last_price} | " \
+               f"ups = {self.ups} | downs = {self.downs} ]"
 
     def reset(self) -> None:
         """
-        Reset all indicators being managed.
-        :return: (void)
+        Reset the indicator.
+        :return:
         """
-        for (name, indicator) in self.indicators:
-            indicator.reset()
+        self.last_price = None
+        self.ups = self.downs = 0.
+        super().reset()
 
-    def get_value(self) -> List[float]:
+    def step(self, price: float) -> None:
         """
-        Get all indicator values in the manager's inventory.
-        :return: (list of floats) Indicator values for current time step
+        Update indicator value incrementally.
+        :param price: midpoint price
+        :return:
         """
-        values = []
-        for name, indicator in self.indicators:
-            indicator_value = indicator.value
-            if isinstance(indicator_value, list):
-                values.extend(indicator_value)
-            else:
-                values.append(indicator_value)
-        return values
+        if self.last_price is None:
+            self.last_price = price
+            return
+
+        if np.isnan(price):
+            print(f'Error: RSI.step() -> price is {price}')
+            return
+
+        if price == 0.:
+            price_pct_change = 0.
+        elif self.last_price == 0.:
+            price_pct_change = 0.
+        else:
+            price_pct_change = round((price / self.last_price) - 1., 6)
+
+        if np.isinf(price_pct_change):
+            price_pct_change = 0.
+
+        self.last_price = price
+
+        if price_pct_change > 0.:
+            self.ups += price_pct_change
+        else:
+            self.downs += price_pct_change
+
+        self.all_history_queue.append(price_pct_change)
+
+        # only pop off items if queue is done warming up
+        if len(self.all_history_queue) <= self.window:
+            return
+
+        price_to_remove = self.all_history_queue.popleft()
+
+        if price_to_remove > 0.:
+            self.ups -= price_to_remove
+        else:
+            self.downs -= price_to_remove
+
+        # Save current time step value for EMA, in case smoothing is enabled
+        self._value = self.calculate()
+        super().step(value=self._value)
+
+    def calculate(self) -> float:
+        """
+        Calculate price momentum imbalance.
+        :return: imbalance in range of [-1, 1]
+        """
+        mean_downs = abs(self.safe_divide(nom=self.downs, denom=self.window))
+        mean_ups = self.safe_divide(nom=self.ups, denom=self.window)
+        gain = mean_ups - mean_downs
+        loss = mean_ups + mean_downs
+        return self.safe_divide(nom=gain, denom=loss)
+    
+class TnS(Indicator):
+    """
+    Time and sales [trade flow] imbalance indicator
+    """
+
+    def __init__(self, **kwargs):
+        super().__init__(label='tns', **kwargs)
+        self.ups = self.downs = 0.
+
+    def __str__(self):
+        return f"TNS: ups={self.ups} | downs={self.downs}"
+
+    def reset(self) -> None:
+        """
+        Reset indicator.
+        """
+        self.ups = self.downs = 0.
+        super().reset()
+
+    def step(self, buys: float, sells: float) -> None:
+        """
+        Update indicator with new transaction data.
+        :param buys: buy transactions
+        :param sells: sell transactions
+        """
+        self.ups += abs(buys)
+        self.downs += abs(sells)
+        self.all_history_queue.append((buys, sells))
+
+        # only pop off items if queue is done warming up
+        if len(self.all_history_queue) <= self.window:
+            return
+
+        buys_, sells_ = self.all_history_queue.popleft()
+        self.ups -= abs(buys_)
+        self.downs -= abs(sells_)
+
+        # Save current time step value for EMA, in case smoothing is enabled
+        self._value = self.calculate()
+        super().step(value=self._value)
+
+    def calculate(self) -> float:
+        """
+        Calculate trade flow imbalance.
+        :return: imbalance in range of [-1, 1]
+        """
+        gain = round(self.ups - self.downs, 6)
+        loss = round(self.ups + self.downs, 6)
+        return self.safe_divide(nom=gain, denom=loss)
