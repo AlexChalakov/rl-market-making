@@ -16,8 +16,8 @@ EMA_ALPHA = 0.99  # Alpha value for EMA
 INTERVAL = 1  # Interval in seconds between LOB snapshots
 
 # UPDATE TO RECORD A FULL 24-HOUR DAY OF DATA
-# DURATION = 24 * 60 * 60 # Total duration in seconds for data collection
-DURATION = 180  # Total duration in seconds for data collection
+DURATION = 24 * 60 * 60 # Total duration in seconds for data collection
+# DURATION = 180  # Total duration in seconds for data collection
 
 # ./indicators/*
 INDICATOR_WINDOW = [60 * i for i in [5, 15]]  # Convert minutes to seconds

@@ -3,7 +3,7 @@ from keras.optimizers.legacy import Adam
 import numpy as np
 
 class PPOAgent:
-    def __init__(self, env, policy_network, value_network, learning_rate=3e-4, gamma=0.99, clip_range=0.2, epochs=10, batch_size=64, lambda_=0.95):
+    def __init__(self, env, policy_network, value_network, learning_rate=3e-4, gamma=0.95, clip_range=0.1, epochs=20, batch_size=128, lambda_=0.95):
         self.env = env
         self.policy_network = policy_network
         self.value_network = value_network
@@ -24,6 +24,9 @@ class PPOAgent:
     def act(self, state):
         state = np.expand_dims(state, axis=0)
         action = self.policy_network.predict(state)[0]
+        #print(f"Raw action from policy network: {action}")
+        action = np.clip(action, self.env.action_space.low, self.env.action_space.high)
+        #print(f"Clipped action: {action}")
         return action
 
     # The observe method takes the state, action, reward, next state, and done flag as input 
@@ -33,6 +36,7 @@ class PPOAgent:
         next_state = np.expand_dims(next_state, axis=0)
         
         with tf.GradientTape() as tape:
+            # Predict action probabilities and state values
             action_pred = self.policy_network(state)
             value_pred = self.value_network(state)
             next_value_pred = self.value_network(next_state)
@@ -42,20 +46,21 @@ class PPOAgent:
             delta = reward + (1 - done) * self.gamma * next_value_pred - value_pred
             advantage = delta + self.gamma * self.lambda_ * (1 - done) * next_value_pred
 
-            # Ensures the new policy does not deviate significantly from the old policy - PPO loss
+            # PPO objective function: Clipping the ratio to prevent large updates
             old_log_probs = tf.reduce_sum(action_pred * tf.stop_gradient(action), axis=1)
             new_log_probs = tf.reduce_sum(action_pred * action, axis=1)
             ratio = tf.exp(new_log_probs - old_log_probs)
             clipped_ratio = tf.clip_by_value(ratio, 1 - self.clip_range, 1 + self.clip_range)
             policy_loss = -tf.reduce_mean(tf.minimum(ratio * advantage, clipped_ratio * advantage))
             
-            # Value loss - reduces the prediction error of the value network
+            # Value loss for better value function approximation
             value_loss = tf.reduce_mean(tf.square(reward + (1 - done) * self.gamma * next_value_pred - value_pred))
             loss = policy_loss + 0.5 * value_loss
 
-        # Applies the computed gradients to update network parameters
+        # Apply the computed gradients to update network parameters
         grads = tape.gradient(loss, self.policy_network.trainable_variables + self.value_network.trainable_variables)
-        self.optimizer.apply_gradients(zip(grads, self.policy_network.trainable_variables + self.value_network.trainable_variables))
+        clipped_grads = [tf.clip_by_value(grad, -1.0, 1.0) if grad is not None else grad for grad in grads]
+        self.optimizer.apply_gradients(zip(clipped_grads, self.policy_network.trainable_variables + self.value_network.trainable_variables))
 
     # The save method saves the policy and value networks to the specified paths.
     def save(self, policy_path, value_path):
