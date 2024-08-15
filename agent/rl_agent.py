@@ -1,9 +1,9 @@
 import tensorflow as tf
-from tensorflow.keras.optimizers import Adam
+from keras.optimizers.legacy import Adam
 import numpy as np
 
 class PPOAgent:
-    def __init__(self, env, policy_network, value_network, learning_rate=3e-4, gamma=0.95, clip_range=0.1, epochs=20, batch_size=128, lambda_=0.95):
+    def __init__(self, env, policy_network, value_network, learning_rate=3e-4, gamma=0.9, clip_range=0.1, epochs=20, batch_size=128, lambda_=0.95):
         self.env = env
         self.policy_network = policy_network
         self.value_network = value_network

@@ -45,6 +45,8 @@ def main():
     # Initialize environment
     print("Initializing Environment, NN and Agent.")
     env = ContinuousMarketEnv(processed_data)
+    # Adjust the environment parameters as needed
+    # env = ContinuousMarketEnv(processed_data, reward_type='asymmetrical')
 
     # Define neural network
     input_shape = (processed_data.shape[1], 1)  # Adjust based on your data shape
