@@ -1,8 +1,9 @@
 import os
 import pandas as pd
 import numpy as np
+from sklearn.model_selection import train_test_split
 
-def load_lobster_data(message_file, orderbook_file, limit = None):
+def load_lobster_data(message_file, orderbook_file, limit=None):
     # Load the message and order book files
     messages = pd.read_csv(message_file, header=None)
     orderbook = pd.read_csv(orderbook_file, header=None)
@@ -16,11 +17,10 @@ def load_lobster_data(message_file, orderbook_file, limit = None):
     
     # Merge messages and order book data
     data = pd.concat([messages, orderbook], axis=1)
-    # To visualise the data
+    # To visualize the data
     print(data.head())
 
-    # Put limit on the number of rows if specified
-    if limit is not None and len(data) > limit:
+    if limit is not None:
         data = data.sample(n=limit, random_state=42).sort_index()
 
     return data
@@ -37,7 +37,7 @@ def preprocess_lobster_data(lob_data):
     # Normalize sizes by the maximum size observed in the dataset
     max_size = lob_data[[col for col in lob_data.columns if 'Size' in col]].max().max()
     for col in lob_data.columns:
-        if 'Size' in col:
+        if 'Size' is col:
             lob_data[col] = lob_data[col] / max_size  # Normalize by maximum size
 
     # Calculate additional features
@@ -57,3 +57,48 @@ def save_preprocessed_data(lob_data, message_file, orderbook_file):
     lob_data.to_csv(output_file, index=False)
     
     print(f"Preprocessed data saved to {output_file}")
+
+def split_data(data, train_size=0.7, val_size=0.15):
+    """
+    Split the data into training, validation, and test sets.
+    
+    Args:
+        data (pd.DataFrame): The data to split.
+        train_size (float): The proportion of the data to include in the training set.
+        val_size (float): The proportion of the data to include in the validation set.
+        
+    Returns:
+        pd.DataFrame: The training data.
+        pd.DataFrame: The validation data.
+        pd.DataFrame: The test data.
+    """
+    # Ensure that the sum of train_size and val_size does not exceed 1.0
+    if train_size + val_size >= 1.0:
+        raise ValueError("train_size and val_size together should be less than 1.0")
+    
+    # Split the data into training and temporary sets
+    train_data, temp_data = train_test_split(data, test_size=1 - train_size, random_state=None, shuffle=True)
+
+    # Calculate the test size as the remaining portion after training and validation
+    test_size = 1 - val_size - train_size
+    
+    # Split the temporary data into validation and test sets
+    val_data, test_data = train_test_split(temp_data, test_size=test_size/(test_size + val_size), random_state=None, shuffle=True)
+    
+    return train_data, val_data, test_data
+
+def augment_data(data):
+    """
+    Applies data augmentation techniques to the data.
+    :param data: The input dataset.
+    :return: The augmented dataset.
+    """
+    augmented_data = data.copy()
+    
+    # Add noise to prices and sizes
+    for col in augmented_data.columns:
+        if 'Price' in col or 'Size' in col:
+            noise = np.random.normal(0, 0.01, augmented_data[col].shape)
+            augmented_data[col] += noise
+    
+    return augmented_data

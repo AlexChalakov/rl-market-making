@@ -84,18 +84,23 @@ class ContinuousMarketEnv(BaseMarketEnv):
         elif self.reward_type == 'trade_completion':
             reward = self._trade_completion_reward(pnl, action_taken)
 
+        elif self.reward_type == 'spread_capture':
+            reward = self._spread_capture_reward(pnl, action_taken)
+
         else:
             reward = self._default_reward(pnl, action_taken)  # Fallback to default
 
         return reward
 
     # The _default_reward method calculates the reward based on the Profit and Loss (PnL) and the action taken.
+    # This is the main reward function used in the environment.
     def _default_reward(self, pnl, action_taken):
         # Apply a scaling factor to reduce the overall reward magnitude
         scaling_factor = 0.01
 
         # Inventory penalty to encourage balanced inventory (not too high or too low)
-        inventory_penalty = max(0, abs(self.inventory - 5)) * 0.05  # Adjusted to be less harsh
+        target_inventory = 5  # Define a target inventory level
+        inventory_penalty = max(0, abs(self.inventory - target_inventory)) * 0.05  # Adjusted to be less harsh
 
         # Reward for maintaining some inventory, penalize for zero inventory
         balance_reward = max(self.inventory, 0) * 0.1  # Increased reward for holding inventory
@@ -104,19 +109,31 @@ class ContinuousMarketEnv(BaseMarketEnv):
         cash_penalty = max(0, -self.cash) * 0.01  # Slightly reduced penalty for negative cash
 
         # Execution quality reward
-        executed_prices = [trade[1] for trade in self.trades]
-        if executed_prices:
-            average_execution_price = np.mean(executed_prices)
+        execution_quality_reward = 0
+        if self.trades:
+            last_trade = self.trades[-1]
+            trade_type, executed_price, trade_size = last_trade
+
+            # Execution quality reward is based on how close the executed price is to the mid-price
             mid_price = (self.data.iloc[self.current_step]['Bid Price 1'] + self.data.iloc[self.current_step]['Ask Price 1']) / 2
-            execution_quality_reward = -abs(average_execution_price - mid_price) * 0.01  # Adjusted to be less harsh
-        else:
-            execution_quality_reward = 0
+            execution_quality_reward = -abs(executed_price - mid_price) * 0.01  # Adjusted to be less harsh
+
+            # Additional reward or penalty based on the profitability of the trade
+            if trade_type == "SELL":
+                # Calculate profit or loss
+                average_buy_price = np.mean([trade[1] for trade in self.trades if trade[0] == "BUY"])
+                profit_or_loss = executed_price - average_buy_price
+
+                if profit_or_loss > 0:
+                    execution_quality_reward += profit_or_loss * trade_size * 0.01  # Reward for profit
+                else:
+                    execution_quality_reward += profit_or_loss * trade_size * 0.02  # Larger penalty for loss
 
         # Total reward
         reward = (pnl - inventory_penalty - cash_penalty + execution_quality_reward + balance_reward) * scaling_factor
 
         if action_taken:
-            reward += 0.01  # Small reward for making a trade
+            reward += 0.05  # Small reward for making a trade
 
         return reward
 
@@ -150,5 +167,24 @@ class ContinuousMarketEnv(BaseMarketEnv):
             reward += 0.05  # Additional reward for balancing inventory
         else:
             reward -= 0.01 * abs(self.inventory)  # Penalize for holding inventory
+
+        return reward
+    
+    # New spread_capture reward function
+    def _spread_capture_reward(self, pnl, action_taken):
+        spread_capture_reward = 0.0
+
+        if self.trades:
+            last_trade = self.trades[-1]
+            if last_trade[0] == "BUY":
+                spread_capture_reward += (self.data.iloc[self.current_step]['Ask Price 1'] - last_trade[1]) * last_trade[2]
+            elif last_trade[0] == "SELL":
+                spread_capture_reward += (last_trade[1] - self.data.iloc[self.current_step]['Bid Price 1']) * last_trade[2]
+
+        # Combine with pnl-based reward
+        reward = pnl * 0.01 + spread_capture_reward
+
+        if action_taken:
+            reward += 0.01  # Small reward for making a trade
 
         return reward
