@@ -1,7 +1,7 @@
 import numpy as np
 from environment.base_env import BaseMarketEnv
 from gym import spaces
-
+from utils.indicators import Indicators
 # In a continuous environment, the actions the agent can take are not limited to a finite set but can take any value within a specified range. 
 
 # The ContinuousMarketEnv class extends the BaseMarketEnv class and defines a continuous action space for buying and selling assets.
@@ -15,6 +15,9 @@ class ContinuousMarketEnv(BaseMarketEnv):
         self.cash = 10000 # Cash for the agent
         self.trades = [] # List to store executed trades
         self.reward_type = reward_type
+        self.past_pnls = []  # To store past PnL values for risk metrics
+        self.trade_flows = []  # To store order flow imbalance data
+        self.current_step = 0
 
     # The reset method initializes the environment at the beginning of an episode.
     # It resets the current step, inventory, cash, and trade history.
@@ -23,6 +26,8 @@ class ContinuousMarketEnv(BaseMarketEnv):
         self.inventory = 0
         self.cash = 10000
         self.trades = []
+        self.past_pnls = []
+        self.trade_flows = []
         return self.data.iloc[self.current_step].values
 
     # The step method takes an action as input and returns the next state, reward, done flag, and additional information.
@@ -34,6 +39,7 @@ class ContinuousMarketEnv(BaseMarketEnv):
         best_bid = self.data.iloc[self.current_step]['Bid Price 1']
         best_ask = self.data.iloc[self.current_step]['Ask Price 1']
         spread = best_ask - best_bid
+        half_spread = (best_ask - best_bid) / 2
 
         # Enhanced action-to-order mapping logic
         bid_adjustment = bid_adjustment * spread
@@ -65,15 +71,28 @@ class ContinuousMarketEnv(BaseMarketEnv):
         reward = self.calculate_reward(action_taken)
 
         state = self.get_current_state()
+        
+        # Store PnL and trade flow data
+        self.past_pnls.append(self.cash + self.inventory * self.data.iloc[self.current_step]['Bid Price 1'])
+        self.trade_flows.append(self.cash)  # Example, update with actual trade flow imbalance calculation
+        
         return state, reward, done, {}
 
-    # The calculate_reward method calculates the reward based on the action taken and the current state.
+    # Designed to balance the inventory and execution quality.
     def calculate_reward(self, action_taken):
+        # coculate the percentage of half spread to the current bid price
+        half_spread_percentage = (self.data.iloc[self.current_step]['Ask Price 1'] - self.data.iloc[self.current_step]['Bid Price 1']) / self.data.iloc[self.current_step]['Bid Price 1']
         # Calculate the Profit and Loss (PnL)
         pnl = self.cash + self.inventory * self.data.iloc[self.current_step]['Bid Price 1']
+        
+        # New metrics calculation
+        implementation_shortfall = self.implementation_shortfall()
+        order_flow_imbalance = self.order_flow_imbalance()
+        rsi = self.rsi()
+        mean_average_pricing = self.mean_average_pricing()
 
         if self.reward_type == 'default':
-            reward = self._default_reward(pnl, action_taken)
+            reward = self._default_reward(pnl, action_taken, half_spread_percentage, implementation_shortfall, order_flow_imbalance, rsi, mean_average_pricing)
 
         elif self.reward_type == 'asymmetrical':
             reward = self._asymmetrical_reward(pnl, action_taken)
@@ -88,13 +107,13 @@ class ContinuousMarketEnv(BaseMarketEnv):
             reward = self._spread_capture_reward(pnl, action_taken)
 
         else:
-            reward = self._default_reward(pnl, action_taken)  # Fallback to default
+            reward = self._default_reward(pnl, action_taken, half_spread_percentage, implementation_shortfall, order_flow_imbalance, rsi, mean_average_pricing)  # Fallback to default
 
         return reward
 
     # The _default_reward method calculates the reward based on the Profit and Loss (PnL) and the action taken.
     # This is the main reward function used in the environment.
-    def _default_reward(self, pnl, action_taken):
+    def _default_reward(self, pnl, action_taken, half_spread_percentage, implementation_shortfall, order_flow_imbalance, rsi, mean_average_pricing):
         # Apply a scaling factor to reduce the overall reward magnitude
         scaling_factor = 0.01
 
@@ -128,9 +147,31 @@ class ContinuousMarketEnv(BaseMarketEnv):
                     execution_quality_reward += profit_or_loss * trade_size * 0.01  # Reward for profit
                 else:
                     execution_quality_reward += profit_or_loss * trade_size * 0.02  # Larger penalty for loss
+            # Include transaction cost
+            transaction_cost_rate = 0.001  # 0.1% transaction cost
+            transaction_cost = transaction_cost_rate * executed_price * trade_size
+            execution_quality_reward -= transaction_cost
+        
+        # Risk penalty based on variance of recent PnL values
+        recent_pnls = self.past_pnls[-10:]  # Consider the last 10 PnL values
+        if len(recent_pnls) > 1:
+            pnl_variance = np.var(recent_pnls)
+            risk_penalty = pnl_variance * 0.01  # Adjust the penalty factor as needed
+        else:
+            risk_penalty = 0
+
+        # Inventory holding cost
+        inventory_cost = 0.01  # Cost per unit inventory
+        holding_cost = self.inventory * inventory_cost
 
         # Total reward
-        reward = (pnl - inventory_penalty - cash_penalty + execution_quality_reward + balance_reward) * scaling_factor
+        reward =( (pnl - inventory_penalty - cash_penalty - risk_penalty - holding_cost + execution_quality_reward + balance_reward) * scaling_factor)
+        + ((half_spread_percentage - 0.01) * 0.1)  # fine-tune the weights of the following metrics based on their impact on performance.
+        - (implementation_shortfall * 0.1)
+        - (abs(order_flow_imbalance) * 0.05)
+        - (abs(rsi - 50) * 0.01)
+        - (abs(mean_average_pricing - (self.data.iloc[self.current_step]['Bid Price 1'] + self.data.iloc[self.current_step]['Ask Price 1']) / 2) * 0.01)
+
 
         if action_taken:
             reward += 0.05  # Small reward for making a trade
@@ -169,22 +210,41 @@ class ContinuousMarketEnv(BaseMarketEnv):
             reward -= 0.01 * abs(self.inventory)  # Penalize for holding inventory
 
         return reward
+
+    def implementation_shortfall(self):
+            # Implementation Shortfall (IS) calculation
+            if not self.trades:
+                return 0
+            mid_price = (self.data.iloc[self.current_step]['Bid Price 1'] + self.data.iloc[self.current_step]['Ask Price 1']) / 2
+            total_is = sum(abs(trade[1] - mid_price) * trade[2] for trade in self.trades)
+            return total_is / len(self.trades) if self.trades else 0
+
+    def order_flow_imbalance(self):
+            # Order Flow Imbalance (TFI) calculation
+            if not self.trade_flows:
+                return 0
+            total_buy = sum(flow for flow in self.trade_flows if flow > 0)
+            total_sell = sum(flow for flow in self.trade_flows if flow < 0)
+            return total_buy - total_sell
+    def rsi(self):
+            # RSI calculation (simple version)
+            prices = [trade[1] for trade in self.trades if trade[0] == "SELL"]
+            if len(prices) < 14:
+                return 50  # Default RSI value
+            gains = [prices[i] - prices[i - 1] for i in range(1, len(prices)) if prices[i] > prices[i - 1]]
+            losses = [-1 * (prices[i] - prices[i - 1]) for i in range(1, len(prices)) if prices[i] < prices[i - 1]]
+            average_gain = np.mean(gains) if gains else 0
+            average_loss = np.mean(losses) if losses else 0
+            rs = average_gain / average_loss if average_loss != 0 else float('inf')
+            return 100 - (100 / (1 + rs))
+
+    def mean_average_pricing(self):
+            # Mean Average Pricing (MAP) calculation
+            if not self.trades:
+                return 0
+            total_price = sum(trade[1] * trade[2] for trade in self.trades)
+            total_quantity = sum(trade[2] for trade in self.trades)
+            return total_price / total_quantity if total_quantity else 0
+
+
     
-    # New spread_capture reward function
-    def _spread_capture_reward(self, pnl, action_taken):
-        spread_capture_reward = 0.0
-
-        if self.trades:
-            last_trade = self.trades[-1]
-            if last_trade[0] == "BUY":
-                spread_capture_reward += (self.data.iloc[self.current_step]['Ask Price 1'] - last_trade[1]) * last_trade[2]
-            elif last_trade[0] == "SELL":
-                spread_capture_reward += (last_trade[1] - self.data.iloc[self.current_step]['Bid Price 1']) * last_trade[2]
-
-        # Combine with pnl-based reward
-        reward = pnl * 0.01 + spread_capture_reward
-
-        if action_taken:
-            reward += 0.01  # Small reward for making a trade
-
-        return reward

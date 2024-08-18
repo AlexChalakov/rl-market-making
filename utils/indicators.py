@@ -9,6 +9,49 @@ import numpy as np
 from configurations import INDICATOR_WINDOW
 from utils.EMA import ExponentialMovingAverage, load_ema
 
+class Indicators:
+    def __init__(self, trades=None, trade_flows=None):
+        self.trades = trades
+        self.trade_flows = trade_flows
+        
+    def implementation_shortfall(self):
+            # Implementation Shortfall (IS) calculation
+            if not self.trades:
+                return 0
+            mid_price = (self.data.iloc[self.current_step]['Bid Price 1'] + self.data.iloc[self.current_step]['Ask Price 1']) / 2
+            total_is = sum(abs(trade[1] - mid_price) * trade[2] for trade in self.trades)
+            return total_is / len(self.trades) if self.trades else 0
+
+    def order_flow_imbalance(self):
+            # Order Flow Imbalance (TFI) calculation
+            if not self.trade_flows:
+                return 0
+            total_buy = sum(flow for flow in self.trade_flows if flow > 0)
+            total_sell = sum(flow for flow in self.trade_flows if flow < 0)
+            return total_buy - total_sell
+    def rsi(self):
+            # RSI calculation (simple version)
+            prices = [trade[1] for trade in self.trades if trade[0] == "SELL"]
+            if len(prices) < 14:
+                return 50  # Default RSI value
+            gains = [prices[i] - prices[i - 1] for i in range(1, len(prices)) if prices[i] > prices[i - 1]]
+            losses = [-1 * (prices[i] - prices[i - 1]) for i in range(1, len(prices)) if prices[i] < prices[i - 1]]
+            average_gain = np.mean(gains) if gains else 0
+            average_loss = np.mean(losses) if losses else 0
+            rs = average_gain / average_loss if average_loss != 0 else float('inf')
+            return 100 - (100 / (1 + rs))
+
+    def mean_average_pricing(self):
+            # Mean Average Pricing (MAP) calculation
+            if not self.trades:
+                return 0
+            total_price = sum(trade[1] * trade[2] for trade in self.trades)
+            total_quantity = sum(trade[2] for trade in self.trades)
+            return total_price / total_quantity if total_quantity else 0
+
+
+
+# not used
 class Indicator(ABC):
 
     def __init__(self, label: str,
@@ -320,3 +363,4 @@ class TnS(Indicator):
         gain = round(self.ups - self.downs, 6)
         loss = round(self.ups + self.downs, 6)
         return self.safe_divide(nom=gain, denom=loss)
+    

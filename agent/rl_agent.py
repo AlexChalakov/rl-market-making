@@ -1,6 +1,7 @@
 import tensorflow as tf
-from keras.optimizers.legacy import Adam
+from tensorflow.keras.optimizers import Adam
 import numpy as np
+import pandas as pd
 
 class PPOAgent:
     def __init__(self, env, policy_network, value_network, learning_rate=3e-4, gamma=0.9, clip_range=0.1, epochs=20, batch_size=128, lambda_=0.95):

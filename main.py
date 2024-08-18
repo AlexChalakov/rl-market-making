@@ -78,7 +78,7 @@ def main():
 
     # *** Default Option: Load Preprocessed Crypto Limit Order Book (LOB) Data ***
     # This option is active by default, loading the preprocessed crypto order book data
-
+    # Uncomment the following lines to use the LOB data
     # data_file = os.path.join('data', 'data_pipeline', 'crypto_lob_data.csv')
     # if not os.path.exists(data_file):
     #     raise FileNotFoundError(f"The file {data_file} does not exist. Please run the data pipeline first.")
@@ -104,7 +104,7 @@ def main():
     train_data = augment_data(train_data)
 
     # Save the preprocessed data
-    save_preprocessed_data(processed_data, message_file, orderbook_file)
+    # save_preprocessed_data(processed_data, message_file, orderbook_file)
 
     # Initialize environment with training data
     print("Initializing Environment, NN and Agent.")
