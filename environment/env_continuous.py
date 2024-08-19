@@ -39,20 +39,28 @@ class ContinuousMarketEnv(BaseMarketEnv):
         best_bid = self.data.iloc[self.current_step]['Bid Price 1']
         best_ask = self.data.iloc[self.current_step]['Ask Price 1']
         spread = best_ask - best_bid
-        half_spread = (best_ask - best_bid) / 2
 
         # Enhanced action-to-order mapping logic
         bid_adjustment = bid_adjustment * spread
         executed_bid = best_bid + bid_adjustment
-        executed_ask = best_ask - bid_adjustment  # Reflecting potential symmetrical adjustment
-
+        executed_ask = best_ask - bid_adjustment  # Reflecting potential symmetrical adjustments
+        
+        # Simulate slippage by slightly adjusting the executed price
+        slippage = np.random.uniform(0, 0.001)  # Random slippage within a small range
+        executed_bid *= (1 + slippage)
+        executed_ask *= (1 - slippage)
+       
         action_taken = False
-        trade_size = int(trade_size)  # Convert trade size to integer
+        
+        # implementing dynamic trade sizing based on recent PnL volatility to be more resilient to adverse market conditions
+        recent_pnl_volatility = np.std(self.past_pnls[-10:]) if len(self.past_pnls) > 1 else 0
+        trade_size = int(trade_size / (1 + recent_pnl_volatility))  # Reduce size in high volatility
 
         if trade_size != 0:  # Ensure trade size is not zero
             # Buy action (if cash is sufficient)
             if trade_size > 0 and self.cash >= executed_bid * trade_size:
-                self.inventory += trade_size
+                # Simulating the effect that large orders can impact prices.  will teach the agent to split orders or be cautious with large trades to minimize impact
+                self.data.iloc[self.current_step]['Ask Price 1'] += trade_size * 0.001 
                 self.cash -= executed_bid * trade_size
                 self.trades.append(("BUY", executed_bid, trade_size))
                 action_taken = True
@@ -60,6 +68,7 @@ class ContinuousMarketEnv(BaseMarketEnv):
 
             # Sell action (if inventory is sufficient)
             if trade_size < 0 and self.inventory >= abs(trade_size):
+                self.data.iloc[self.current_step]['Bid Price 1'] -= abs(trade_size) * 0.001 
                 self.inventory += trade_size  # trade_size is negative, so this decreases inventory
                 self.cash += abs(trade_size) * executed_ask
                 self.trades.append(("SELL", executed_ask, abs(trade_size)))
@@ -129,6 +138,7 @@ class ContinuousMarketEnv(BaseMarketEnv):
 
         # Execution quality reward
         execution_quality_reward = 0
+        
         if self.trades:
             last_trade = self.trades[-1]
             trade_type, executed_price, trade_size = last_trade
@@ -147,25 +157,36 @@ class ContinuousMarketEnv(BaseMarketEnv):
                     execution_quality_reward += profit_or_loss * trade_size * 0.01  # Reward for profit
                 else:
                     execution_quality_reward += profit_or_loss * trade_size * 0.02  # Larger penalty for loss
-            # Include transaction cost
-            transaction_cost_rate = 0.001  # 0.1% transaction cost
+            
+            # Scale transaction cost based on trade size
+            transaction_cost_rate = 0.001 + 0.0001 * abs(trade_size)  # Increase cost with size
             transaction_cost = transaction_cost_rate * executed_price * trade_size
             execution_quality_reward -= transaction_cost
-        
+            
         # Risk penalty based on variance of recent PnL values
         recent_pnls = self.past_pnls[-10:]  # Consider the last 10 PnL values
         if len(recent_pnls) > 1:
             pnl_variance = np.var(recent_pnls)
+            pnl_mean = np.mean(recent_pnls)
+            pnl_std = np.std(recent_pnls)
             risk_penalty = pnl_variance * 0.01  # Adjust the penalty factor as needed
+            if pnl_std > 0:
+                sharpe_ratio_penalty = pnl_mean / pnl_std
+                risk_penalty += sharpe_ratio_penalty * 0.01
         else:
             risk_penalty = 0
-
-        # Inventory holding cost
-        inventory_cost = 0.01  # Cost per unit inventory
-        holding_cost = self.inventory * inventory_cost
-
+        
+        # Penalize inventory holding during high volatility or low liquidity
+        market_volatility = np.std(self.data['Bid Price 1'].iloc[max(0, self.current_step - 10):self.current_step])
+        market_liquidity = (self.data.iloc[self.current_step]['Bid Size 1'] + self.data.iloc[self.current_step]['Ask Size 1']) / 2
+        holding_penalty = self.inventory * 0.01 * (market_volatility / market_liquidity)
+        
+        # Time-dependent inventory holding cost
+        holding_time_penalty = self.inventory * 0.001 * self.current_step  # Increase with time
+        holding_penalty += holding_time_penalty
+        
         # Total reward
-        reward =( (pnl - inventory_penalty - cash_penalty - risk_penalty - holding_cost + execution_quality_reward + balance_reward) * scaling_factor)
+        reward =( (pnl - inventory_penalty - cash_penalty - risk_penalty - holding_penalty + execution_quality_reward + balance_reward) * scaling_factor)
         + ((half_spread_percentage - 0.01) * 0.1)  # fine-tune the weights of the following metrics based on their impact on performance.
         - (implementation_shortfall * 0.1)
         - (abs(order_flow_imbalance) * 0.05)
