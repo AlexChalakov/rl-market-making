@@ -2,7 +2,6 @@ import tensorflow as tf
 from tensorflow import keras
 from keras import layers, models, regularizers
 
-
 # The create_cnn_policy_network function creates a convolutional neural network (CNN) policy network.
 # This will determine the actions to take based on the current state.
 def create_cnn_attention_policy_network(input_shape):
@@ -30,7 +29,6 @@ def create_cnn_attention_value_network(input_shape):
     model.add(layers.Dense(128, activation='relu', kernel_initializer='he_normal'))
     model.add(layers.Dense(1, activation='linear'))  # Single output for value estimation
     return model
-
 
 def create_lstm_policy_network(input_shape, lstm_units=64, output_units=2):
     model = models.Sequential([

@@ -78,6 +78,7 @@ def main():
 
     # *** Default Option: Load Preprocessed Crypto Limit Order Book (LOB) Data ***
     # This option is active by default, loading the preprocessed crypto order book data
+
     # Uncomment the following lines to use the LOB data
     # data_file = os.path.join('data', 'data_pipeline', 'crypto_lob_data.csv')
     # if not os.path.exists(data_file):
@@ -110,7 +111,7 @@ def main():
     print("Initializing Environment, NN and Agent.")
     env = ContinuousMarketEnv(train_data)
     # Adjust the environment parameters as needed
-    # env = ContinuousMarketEnv(processed_data, reward_type='asymmetrical')
+    #env = ContinuousMarketEnv(processed_data, reward_type='asymmetrical')
 
     # Define neural network
     input_shape = (train_data.shape[1], 1)  # Adjust based on your data shape
@@ -125,6 +126,10 @@ def main():
     rewards_per_episode = []
     inventory_per_episode = []
     cash_per_episode = []
+    results_dir = "results"
+        # Create a new directory called "results" if it doesn't exist
+    if not os.path.exists(results_dir):
+        os.makedirs(results_dir)
 
     # Training loop
     num_episodes = 10  # Adjust as needed
@@ -156,10 +161,18 @@ def main():
         rewards_per_episode.append(episode_rewards)
         print(f"Episode {episode + 1}/{num_episodes} completed with total reward: {total_reward}")
 
-    # Create a new directory called "results" if it doesn't exist
-    results_dir = "results"
-    if not os.path.exists(results_dir):
-        os.makedirs(results_dir)
+        # Plot Step Rewards Over Time for the current episode
+        plt.figure(figsize=(12, 6))
+        plt.plot(range(1, len(episode_rewards) + 1), episode_rewards, label='Step Reward', color='purple')
+        plt.xlabel('Step')
+        plt.ylabel('Reward')
+        plt.title(f'Step Rewards Over Time - Episode {episode + 1}')
+        plt.legend()
+        plt.savefig(os.path.join(results_dir, f'step_rewards_episode_{episode + 1}.png'))
+        # plt.show()
+
+    # Combined plots for episodes 1, 5, and 10
+    episodes_to_plot = [0, 4, 9]  # Indexing starts at 0, so 1st, 5th, and 10th episodes are 0, 4, 9
 
     # Save the trained agent
     print("Saving the trained agent...")
@@ -179,39 +192,50 @@ def main():
     plt.savefig(os.path.join(results_dir, 'total_rewards_per_episode.png'))
     plt.show()
 
-    # Separate plots for cash levels over time for each episode
-    for i in range(num_episodes):
-        plt.figure(figsize=(12, 6))
-        plt.plot(cash_per_episode[i], label=f'Episode {i + 1}', color='green')
-        plt.xlabel('Step')
-        plt.ylabel('Cash')
-        plt.title(f'Cash Levels Over Time - Episode {i + 1}')
-        plt.legend()
-        plt.savefig(os.path.join(results_dir, f'cash_levels_episode_{i + 1}.png'))
-        plt.show()
+    # Combined Cash Levels Plot
+    plt.figure(figsize=(12, 6))
+    for i in episodes_to_plot:
+        plt.plot(cash_per_episode[i], label=f'Episode {i + 1}')
+    plt.xlabel('Step')
+    plt.ylabel('Cash')
+    plt.title('Cash Levels Over Time - Episodes 1, 5, 10')
+    plt.legend()
+    plt.savefig(os.path.join(results_dir, 'cash_levels_combined.png'))
+    plt.show()
 
-    # Separate plots for inventory levels over time for each episode
-    for i in range(num_episodes):
-        plt.figure(figsize=(12, 6))
-        plt.plot(inventory_per_episode[i], label=f'Episode {i + 1}', color='blue')
-        plt.xlabel('Step')
-        plt.ylabel('Inventory')
-        plt.title(f'Inventory Levels Over Time - Episode {i + 1}')
-        plt.legend()
-        plt.savefig(os.path.join(results_dir, f'inventory_levels_episode_{i + 1}.png'))
-        plt.show()
+    # Combined Inventory Levels Plot
+    plt.figure(figsize=(12, 6))
+    for i in episodes_to_plot:
+        plt.plot(inventory_per_episode[i], label=f'Episode {i + 1}')
+    plt.xlabel('Step')
+    plt.ylabel('Inventory')
+    plt.title('Inventory Levels Over Time - Episodes 1, 5, 10')
+    plt.legend()
+    plt.savefig(os.path.join(results_dir, 'inventory_levels_combined.png'))
+    plt.show()
 
-    # Separate plots for cumulative rewards over time for each episode
-    for i in range(num_episodes):
+   # Combined Cumulative Rewards Plot
+    plt.figure(figsize=(12, 6))
+    for i in episodes_to_plot:
         cumulative_reward = np.cumsum(rewards_per_episode[i])
-        plt.figure(figsize=(12, 6))
-        plt.plot(cumulative_reward, label=f'Episode {i + 1}', color='red')
-        plt.xlabel('Step')
-        plt.ylabel('Cumulative Reward')
-        plt.title(f'Cumulative Reward Over Time - Episode {i + 1}')
-        plt.legend()
-        plt.savefig(os.path.join(results_dir, f'cumulative_reward_episode_{i + 1}.png'))
-        plt.show()
+        plt.plot(cumulative_reward, label=f'Episode {i + 1}')
+    plt.xlabel('Step')
+    plt.ylabel('Cumulative Reward')
+    plt.title('Cumulative Reward Over Time - Episodes 1, 5, 10')
+    plt.legend()
+    plt.savefig(os.path.join(results_dir, 'cumulative_reward_combined.png'))
+    plt.show()
+
+    # Combined Step Rewards Plot
+    plt.figure(figsize=(12, 6))
+    for i in episodes_to_plot:
+        plt.plot(range(1, len(rewards_per_episode[i]) + 1), rewards_per_episode[i], label=f'Episode {i + 1}')
+    plt.xlabel('Step')
+    plt.ylabel('Step Reward')
+    plt.title('Step Rewards Over Time - Episodes 1, 5, 10')
+    plt.legend()
+    plt.savefig(os.path.join(results_dir, 'step_rewards_combined.png'))
+    plt.show()
 
     # Evaluate the agent on validation data
     val_total_reward = evaluate_agent(agent, env, val_data, "Validation", results_dir)
