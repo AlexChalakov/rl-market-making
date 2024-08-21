@@ -149,8 +149,28 @@ class ContinuousMarketEnv(BaseMarketEnv):
         # Small reward for maintaining or increasing PnL over time
         pnl_change_reward = (pnl - self.past_pnls[-1]) * 0.01 if len(self.past_pnls) > 1 else 0
 
+        # Adding the market metrics to the reward
+        # These components are meant to encourage the agent to optimize for better market conditions
+        #spread_penalty = -abs(half_spread_percentage) * 0.0005
+        #shortfall_penalty = -abs(implementation_shortfall) * 0.0005
+        #imbalance_reward = -abs(order_flow_imbalance) * 0.0005  # You might want to consider reversing this sign depending on your interpretation
+        #rsi_penalty = -abs(rsi - 50) * 0.0001  # Penalize deviation from a neutral RSI
+        #map_reward = -abs(mean_average_pricing - mid_price) * 0.0005
+
         # Total reward is the sum of the components
-        reward = pnl + trade_reward - inventory_penalty + execution_quality_reward + spread_capture_reward + pnl_change_reward
+        reward = (
+            pnl 
+            + trade_reward 
+            - inventory_penalty 
+            + execution_quality_reward 
+            + spread_capture_reward 
+            + pnl_change_reward 
+            #+ spread_penalty 
+            #+ shortfall_penalty 
+            #+ imbalance_reward 
+            #+ rsi_penalty 
+            #+ map_reward
+        )
 
         return reward
 

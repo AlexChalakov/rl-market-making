@@ -75,7 +75,7 @@ def evaluate_agent(agent, env, data, title, results_dir):
 
 def main():
     # Set random seed for reproducibility
-    set_seed(1724232630)  # no fixed seed; use current time
+    set_seed(None)  # no fixed seed; use current time
 
     # *** Default Option: Load Preprocessed Crypto Limit Order Book (LOB) Data ***
     # This option is active by default, loading the preprocessed crypto order book data
