@@ -4,12 +4,12 @@ import numpy as np
 import pandas as pd
 
 class PPOAgent:
-    def __init__(self, env, policy_network, value_network, learning_rate=3e-4, gamma=0.9, clip_range=0.1, epochs=20, batch_size=128, lambda_=0.95, entropy_coeff=0.01):
+    def __init__(self, env, policy_network, value_network, learning_rate=3e-4, gamma=0.9, clip_range=0.1, epochs=20, batch_size=128, lambda_=0.95, entropy_coeff=0.05):
         self.env = env
         self.policy_network = policy_network
         self.value_network = value_network
 
-        # Fine-tune the learning rate, gamma, clip range, epochs, batch size, and lambda
+        # Fine-tune the learning rate, gamma, clip range, epochs, batch size, lambda, and entropy coefficient
         self.optimizer = Adam(learning_rate=learning_rate)
         self.gamma = gamma  # Discount factor
         self.clip_range = clip_range  # Clipping range for PPO - Limits the change in policy updates to improve stability.
@@ -44,8 +44,7 @@ class PPOAgent:
             value_pred = self.value_network(state)
             next_value_pred = self.value_network(next_state)
 
-            # Calculate advantage
-            # The advantage is calculated using the Generalized Advantage Estimation (GAE) method
+            # Calculate advantage using the Generalized Advantage Estimation (GAE) method
             delta = reward + (1 - done) * self.gamma * next_value_pred - value_pred
             advantage = delta + self.gamma * self.lambda_ * (1 - done) * next_value_pred
 
@@ -56,19 +55,14 @@ class PPOAgent:
             clipped_ratio = tf.clip_by_value(ratio, 1 - self.clip_range, 1 + self.clip_range)
             policy_loss = -tf.reduce_mean(tf.minimum(ratio * advantage, clipped_ratio * advantage))
 
-            # Calculate entropy
-            # Assuming action_pred are logits, apply softmax if you need probabilities
-            # action_probs = tf.nn.softmax(action_pred)  # Uncomment if necessary
-            # entropy = -tf.reduce_mean(tf.reduce_sum(action_probs * tf.math.log(action_probs + 1e-10), axis=1))
-            
-            # Since this is a continuous action space, we use the entropy of a Gaussian distribution
-            entropy = -0.5 * tf.reduce_sum(1 + tf.math.log(2 * np.pi * tf.clip_by_value(tf.square(action_pred), 1e-10, np.inf)), axis=1)
-            entropy_loss = -self.entropy_coeff * tf.reduce_mean(entropy)
+            # Increase entropy to encourage exploration
+            #entropy = -0.5 * tf.reduce_sum(1 + tf.math.log(2 * np.pi * tf.clip_by_value(tf.square(action_pred), 1e-10, np.inf)), axis=1)
+            #entropy_loss = -self.entropy_coeff * tf.reduce_mean(entropy)
             
             # Value loss for better value function approximation
             value_loss = tf.reduce_mean(tf.square(reward + (1 - done) * self.gamma * next_value_pred - value_pred)) 
             # Total loss
-            loss = policy_loss + 0.5 * value_loss + entropy_loss
+            loss = policy_loss + 0.5 * value_loss #+ entropy_loss
 
         # Apply the computed gradients to update network parameters
         grads = tape.gradient(loss, self.policy_network.trainable_variables + self.value_network.trainable_variables)
