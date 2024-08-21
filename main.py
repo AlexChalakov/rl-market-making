@@ -75,7 +75,7 @@ def evaluate_agent(agent, env, data, title, results_dir):
 
 def main():
     # Set random seed for reproducibility
-    set_seed(1724234196)  # no fixed seed; use current time
+    set_seed(1724232630)  # no fixed seed; use current time
 
     # *** Default Option: Load Preprocessed Crypto Limit Order Book (LOB) Data ***
     # This option is active by default, loading the preprocessed crypto order book data
@@ -179,6 +179,16 @@ def main():
     print("Saving the trained agent...")
     agent.save(os.path.join(results_dir, 'saved_policy_model.h5'), os.path.join(results_dir, 'saved_value_model.h5'))
     print("Training completed and model saved.")
+
+    # After the training loop, plot the loss
+    plt.figure(figsize=(12, 6))
+    plt.plot(agent.losses, label='Training Loss', color='blue')
+    plt.xlabel('Training Step')
+    plt.ylabel('Loss')
+    plt.title('Training Loss Over Time')
+    plt.legend()
+    plt.savefig(os.path.join(results_dir, 'training_loss_over_time.png'))
+    plt.show()
 
     # Plot total rewards per episode with moving average
     plt.figure(figsize=(12, 6))

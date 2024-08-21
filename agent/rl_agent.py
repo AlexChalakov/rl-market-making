@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 
 class PPOAgent:
-    def __init__(self, env, policy_network, value_network, learning_rate=3e-4, gamma=0.9, clip_range=0.1, epochs=20, batch_size=128, lambda_=0.95, entropy_coeff=0.05):
+    def __init__(self, env, policy_network, value_network, learning_rate=3e-4, gamma=0.9, clip_range=0.1, epochs=20, batch_size=128, lambda_=0.95, entropy_coeff=0.02):
         self.env = env
         self.policy_network = policy_network
         self.value_network = value_network
@@ -17,6 +17,7 @@ class PPOAgent:
         self.batch_size = batch_size  # Batch size for training
         self.lambda_ = lambda_  # GAE lambda
         self.entropy_coeff = entropy_coeff  # Entropy coefficient for encouraging exploration
+        self.losses = []
 
         # Compile the models with a dummy loss to ensure they are set up correctly
         self.policy_network.compile(optimizer=self.optimizer, loss='mse')
@@ -63,6 +64,8 @@ class PPOAgent:
             value_loss = tf.reduce_mean(tf.square(reward + (1 - done) * self.gamma * next_value_pred - value_pred)) 
             # Total loss
             loss = policy_loss + 0.5 * value_loss + entropy_loss
+
+        self.losses.append(loss.numpy())
 
         # Apply the computed gradients to update network parameters
         grads = tape.gradient(loss, self.policy_network.trainable_variables + self.value_network.trainable_variables)
