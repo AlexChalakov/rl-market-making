@@ -56,13 +56,13 @@ class PPOAgent:
             policy_loss = -tf.reduce_mean(tf.minimum(ratio * advantage, clipped_ratio * advantage))
 
             # Increase entropy to encourage exploration
-            #entropy = -0.5 * tf.reduce_sum(1 + tf.math.log(2 * np.pi * tf.clip_by_value(tf.square(action_pred), 1e-10, np.inf)), axis=1)
-            #entropy_loss = -self.entropy_coeff * tf.reduce_mean(entropy)
+            entropy = -0.5 * tf.reduce_sum(1 + tf.math.log(2 * np.pi * tf.clip_by_value(tf.square(action_pred), 1e-10, np.inf)), axis=1)
+            entropy_loss = -self.entropy_coeff * tf.reduce_mean(entropy)
             
             # Value loss for better value function approximation
             value_loss = tf.reduce_mean(tf.square(reward + (1 - done) * self.gamma * next_value_pred - value_pred)) 
             # Total loss
-            loss = policy_loss + 0.5 * value_loss #+ entropy_loss
+            loss = policy_loss + 0.5 * value_loss + entropy_loss
 
         # Apply the computed gradients to update network parameters
         grads = tape.gradient(loss, self.policy_network.trainable_variables + self.value_network.trainable_variables)

@@ -10,7 +10,8 @@ from agent.rl_agent import PPOAgent
 from network.network import create_cnn_attention_policy_network, create_cnn_attention_value_network
 from utils.utils import load_lobster_data, preprocess_lobster_data, save_preprocessed_data, split_data, augment_data
 
-def set_seed(seed=None):
+# Set fixed seed for reproducibility
+def set_seed(seed):
     if seed is None:
         seed = int(time.time())  # Use current time as the seed
     np.random.seed(seed)
@@ -74,7 +75,7 @@ def evaluate_agent(agent, env, data, title, results_dir):
 
 def main():
     # Set random seed for reproducibility
-    set_seed()  # no fixed seed; use current time
+    set_seed(1724234196)  # no fixed seed; use current time
 
     # *** Default Option: Load Preprocessed Crypto Limit Order Book (LOB) Data ***
     # This option is active by default, loading the preprocessed crypto order book data

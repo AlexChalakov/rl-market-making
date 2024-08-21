@@ -24,7 +24,7 @@ class ContinuousMarketEnv(BaseMarketEnv):
     # It resets the current step, inventory, cash, and trade history.
     def reset(self):
         self.current_step = np.random.randint(0, 10)  # Start from a random step within the first 10 steps
-        self.inventory = 0  # Start with a random inventory level
+        self.inventory = 0
         self.cash = 9000 + np.random.uniform(-1000, 1000)  # Add a random variation to the cash
         self.trades = []
         self.past_pnls = []
@@ -94,7 +94,7 @@ class ContinuousMarketEnv(BaseMarketEnv):
 
     # Designed to balance the inventory and execution quality.
     def calculate_reward(self, action_taken):
-        # coculate the percentage of half spread to the current bid price
+        # Calculate the percentage of half spread to the current bid price
         half_spread_percentage = (self.data.iloc[self.current_step]['Ask Price 1'] - self.data.iloc[self.current_step]['Bid Price 1']) / self.data.iloc[self.current_step]['Bid Price 1']
         # Calculate the Profit and Loss (PnL)
         pnl = self.cash + self.inventory * self.data.iloc[self.current_step]['Bid Price 1']
@@ -179,40 +179,40 @@ class ContinuousMarketEnv(BaseMarketEnv):
 
     # The _spread_capture_reward method focuses on capturing the spread between the bid and ask prices.
     def implementation_shortfall(self):
-            # Implementation Shortfall (IS) calculation
-            if not self.trades:
-                return 0
-            mid_price = (self.data.iloc[self.current_step]['Bid Price 1'] + self.data.iloc[self.current_step]['Ask Price 1']) / 2
-            total_is = sum(abs(trade[1] - mid_price) * trade[2] for trade in self.trades)
-            return total_is / len(self.trades) if self.trades else 0
+        # Implementation Shortfall (IS) calculation
+        if not self.trades:
+            return 0
+        mid_price = (self.data.iloc[self.current_step]['Bid Price 1'] + self.data.iloc[self.current_step]['Ask Price 1']) / 2
+        total_is = sum(abs(trade[1] - mid_price) * trade[2] for trade in self.trades)
+        return total_is / len(self.trades) if self.trades else 0
 
     # The order_flow_imbalance method calculates the Order Flow Imbalance (OFI) based on the trade flows.
     def order_flow_imbalance(self):
-            # Order Flow Imbalance (TFI) calculation
-            if not self.trade_flows:
-                return 0
-            total_buy = sum(flow for flow in self.trade_flows if flow > 0)
-            total_sell = sum(flow for flow in self.trade_flows if flow < 0)
-            return total_buy - total_sell
+        # Order Flow Imbalance (TFI) calculation
+        if not self.trade_flows:
+            return 0
+        total_buy = sum(flow for flow in self.trade_flows if flow > 0)
+        total_sell = sum(flow for flow in self.trade_flows if flow < 0)
+        return total_buy - total_sell
     
     # The rsi method calculates the Relative Strength Index (RSI) based on the executed sell prices.
     def rsi(self):
-            # RSI calculation (simple version)
-            prices = [trade[1] for trade in self.trades if trade[0] == "SELL"]
-            if len(prices) < 14:
-                return 50  # Default RSI value
-            gains = [prices[i] - prices[i - 1] for i in range(1, len(prices)) if prices[i] > prices[i - 1]]
-            losses = [-1 * (prices[i] - prices[i - 1]) for i in range(1, len(prices)) if prices[i] < prices[i - 1]]
-            average_gain = np.mean(gains) if gains else 0
-            average_loss = np.mean(losses) if losses else 0
-            rs = average_gain / average_loss if average_loss != 0 else float('inf')
-            return 100 - (100 / (1 + rs))
+        # RSI calculation (simple version)
+        prices = [trade[1] for trade in self.trades if trade[0] == "SELL"]
+        if len(prices) < 14:
+            return 50  # Default RSI value
+        gains = [prices[i] - prices[i - 1] for i in range(1, len(prices)) if prices[i] > prices[i - 1]]
+        losses = [-1 * (prices[i] - prices[i - 1]) for i in range(1, len(prices)) if prices[i] < prices[i - 1]]
+        average_gain = np.mean(gains) if gains else 0
+        average_loss = np.mean(losses) if losses else 0
+        rs = average_gain / average_loss if average_loss != 0 else float('inf')
+        return 100 - (100 / (1 + rs))
 
     # The mean_average_pricing method calculates the Mean Average Pricing (MAP) based on the executed trades.
     def mean_average_pricing(self):
-            # Mean Average Pricing (MAP) calculation
-            if not self.trades:
-                return 0
-            total_price = sum(trade[1] * trade[2] for trade in self.trades)
-            total_quantity = sum(trade[2] for trade in self.trades)
-            return total_price / total_quantity if total_quantity else 0
+        # Mean Average Pricing (MAP) calculation
+        if not self.trades:
+            return 0
+        total_price = sum(trade[1] * trade[2] for trade in self.trades)
+        total_quantity = sum(trade[2] for trade in self.trades)
+        return total_price / total_quantity if total_quantity else 0
