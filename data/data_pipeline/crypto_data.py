@@ -85,6 +85,9 @@ class DataPipeline:
         :param data: DataFrame containing the raw order book data.
         :return: Preprocessed DataFrame.
         """
+        # Convert 'Time' column from string to float
+        data['Time'] = data['Time'].apply(lambda x: time.mktime(datetime.datetime.strptime(x, '%Y-%m-%d %H:%M:%S').timetuple()))
+
         # Calculate Midpoint from the best bid and ask prices
         data['Midpoint'] = (data['BidPrice_0'] + data['AskPrice_0']) / 2
 
@@ -106,9 +109,13 @@ class DataPipeline:
         # Apply EMA smoothing to the 'Midpoint' column
         data = apply_ema_all_data(self.ema, data)
 
-        # Select numeric columns for scaling, excluding the 'Time' column
+        # Scale only specific features, leaving prices and volumes unscaled
+        features_to_scale = ['Spread', 'OrderSizeImbalance', 'VWAP', 'RelativeVolume', 'Midpoint', 'Midpoint_EMA']
+        data[features_to_scale] = self.scaler.fit_transform(data[features_to_scale])
+
+        # Ensure all numeric columns are of type float32 for TensorFlow compatibility
         numeric_columns = data.select_dtypes(include=[np.number]).columns
-        data[numeric_columns] = self.scaler.fit_transform(data[numeric_columns])
+        data[numeric_columns] = data[numeric_columns].astype(np.float32)
 
         return data
 
@@ -133,10 +140,10 @@ if __name__ == "__main__":
     # Initialize DataPipeline
     pipeline = DataPipeline()
 
-    # Collect LOB data for 1 minute at 1-second intervals
+    # Collect LOB data for the specified duration
     lob_data_df = pipeline.collect_lob_data(symbol, EXCHANGE, interval=INTERVAL, duration=DURATION)
     
-    # Preprocess the collected data (optional)
+    # Preprocess the collected data
     processed_data = pipeline.preprocess_data(lob_data_df)
     
     # Save the processed data

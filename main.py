@@ -75,29 +75,30 @@ def evaluate_agent(agent, env, data, title, results_dir):
 
 def main():
     # Set random seed for reproducibility
+    # good seed to test: 1724234196 with lobster data
     set_seed(None)  # no fixed seed; use current time
 
     # *** Default Option: Load Preprocessed Crypto Limit Order Book (LOB) Data ***
     # This option is active by default, loading the preprocessed crypto order book data
 
     # Uncomment the following lines to use the LOB data
-    # data_file = os.path.join('data', 'data_pipeline', 'crypto_lob_data.csv')
-    # if not os.path.exists(data_file):
-    #     raise FileNotFoundError(f"The file {data_file} does not exist. Please run the data pipeline first.")
+    data_file = os.path.join('data', 'data_pipeline', 'crypto_lob_data.csv')
+    if not os.path.exists(data_file):
+        raise FileNotFoundError(f"The file {data_file} does not exist. Please run the data pipeline first.")
 
-    # print("Loading preprocessed crypto order book data...")
-    # processed_data = pd.read_csv(data_file)
+    print("Loading preprocessed crypto order book data...")
+    processed_data = pd.read_csv(data_file)
 
     # *** Alternative Option: Load and Preprocess LOBSTER Data ***
     # Uncomment the following lines to use the LOBSTER data
 
-    message_file = 'data/experimentation/level 5/AAPL_2012-06-21_34200000_57600000_message_5.csv'
-    orderbook_file = 'data/experimentation/level 5/AAPL_2012-06-21_34200000_57600000_orderbook_5.csv'
-    limit = 20000
+    # message_file = 'data/experimentation/level 5/AAPL_2012-06-21_34200000_57600000_message_5.csv'
+    # orderbook_file = 'data/experimentation/level 5/AAPL_2012-06-21_34200000_57600000_orderbook_5.csv'
+    # limit = 20000
     
-    print("Loading and preprocessing LOBSTER data...")
-    lob_data = load_lobster_data(message_file, orderbook_file, limit)
-    processed_data = preprocess_lobster_data(lob_data)
+    # print("Loading and preprocessing LOBSTER data...")
+    # lob_data = load_lobster_data(message_file, orderbook_file, limit)
+    # processed_data = preprocess_lobster_data(lob_data)
 
     # Split the data into training, validation, and testing sets
     train_data, val_data, test_data = split_data(processed_data)
@@ -110,9 +111,7 @@ def main():
 
     # Initialize environment with training data
     print("Initializing Environment, NN and Agent.")
-    env = ContinuousMarketEnv(train_data)
-    # Adjust the environment parameters as needed
-    #env = ContinuousMarketEnv(processed_data, reward_type='asymmetrical')
+    env = ContinuousMarketEnv(train_data) # ContinuousMarketEnv(processed_data, reward_type='asymmetrical')
 
     # Define neural network
     input_shape = (train_data.shape[1], 1)  # Adjust based on your data shape
@@ -127,7 +126,8 @@ def main():
     rewards_per_episode = []
     inventory_per_episode = []
     cash_per_episode = []
-    results_dir = "results"
+
+    results_dir = "results_crypto"
         # Create a new directory called "results" if it doesn't exist
     if not os.path.exists(results_dir):
         os.makedirs(results_dir)
