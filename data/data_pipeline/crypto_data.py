@@ -97,7 +97,7 @@ class DataPipeline:
         # Adjust prices by subtracting 100 to bring in line with the LOBSTER data
         price_columns = [col for col in data.columns if 'Price' in col]
         for col in price_columns:
-            data[col] = data[col] - 100
+            data[col] = data[col] / 100
 
         # Ensure column names are correctly formatted (no underscores)
         data = data.rename(columns=lambda x: x.replace('_', ' '))
