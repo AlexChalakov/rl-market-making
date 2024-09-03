@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 
 class PPOAgent:
-    def __init__(self, env, policy_network, value_network, learning_rate=1e-5, gamma=0.85, clip_range=0.2, epochs=20, batch_size=128, lambda_=0.95, entropy_coeff=0.03):
+    def __init__(self, env, policy_network, value_network, learning_rate=3e-4, gamma=0.9, clip_range=0.1, epochs=20, batch_size=64, lambda_=0.95, entropy_coeff=0.1):
         self.env = env
         self.policy_network = policy_network
         self.value_network = value_network
@@ -27,9 +27,9 @@ class PPOAgent:
     def act(self, state):
         state = np.expand_dims(state, axis=0).astype(np.float32)
         action = self.policy_network.predict(state)[0]
-        print(f"Action output: {action}")
+        #print(f"Action output: {action}")
         action = np.clip(action, self.env.action_space.low, self.env.action_space.high)
-        print(f"Clipped action: {action}")
+        #print(f"Clipped action: {action}")
         return action
 
     # The observe method takes the state, action, reward, next state, and done flag as input 
@@ -41,7 +41,7 @@ class PPOAgent:
         with tf.GradientTape() as tape:
             # Predict action probabilities and state values
             action_pred = self.policy_network(state)
-            print(f"Action Prediction: {action_pred}")
+            #print(f"Action Prediction: {action_pred}")
 
             value_pred = self.value_network(state)
             next_value_pred = self.value_network(next_state)
@@ -67,7 +67,7 @@ class PPOAgent:
             loss = policy_loss + 0.5 * value_loss + entropy_loss
 
         self.losses.append(loss.numpy())
-        print(f"Total Loss: {loss.numpy()} | Policy Loss: {policy_loss.numpy()} | Value Loss: {value_loss.numpy()} | Entropy Loss: {entropy_loss.numpy()}")
+        # print(f"Total Loss: {loss.numpy()} | Policy Loss: {policy_loss.numpy()} | Value Loss: {value_loss.numpy()} | Entropy Loss: {entropy_loss.numpy()}")
 
         # Apply the computed gradients to update network parameters
         grads = tape.gradient(loss, self.policy_network.trainable_variables + self.value_network.trainable_variables)

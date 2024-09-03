@@ -4,15 +4,15 @@ from gym import spaces
 # In a continuous environment, the actions the agent can take are not limited to a finite set but can take any value within a specified range. 
 
 # The ContinuousMarketEnv class extends the BaseMarketEnv class and defines a continuous action space for buying and selling assets.
-## This code simulates a market making environment with a focus on inventory management and execution quality.
+# This code simulates a market making environment with a focus on inventory management and execution quality.
 class ContinuousMarketEnv(BaseMarketEnv):
     def __init__(self, data, reward_type='default'):
         super(ContinuousMarketEnv, self).__init__(data)
         # Adjust action space to include trade size (units) in addition to price adjustments
-        self.action_space = spaces.Box(low=np.array([-1, -5]), high=np.array([1, 5]), dtype=np.float32)
-        self.inventory = 0 # Inventory for the agent
-        self.cash = 10 # Cash for the agent
-        self.trades = [] # List to store executed trades
+        self.action_space = spaces.Box(low=np.array([-1, -2]), high=np.array([1, 2]), dtype=np.float32)
+        self.inventory = 0  # Inventory for the agent
+        self.cash = 10000 # Adjusted cash for the agent considering normalized prices
+        self.trades = []  # List to store executed trades
         self.reward_type = reward_type
         self.past_pnls = []  # To store past PnL values for risk metrics
         self.trade_flows = []  # To store order flow imbalance data
@@ -24,7 +24,7 @@ class ContinuousMarketEnv(BaseMarketEnv):
     def reset(self):
         self.current_step = np.random.randint(0, 10)  # Start from a random step within the first 10 steps
         self.inventory = 0
-        self.cash = 9 + np.random.uniform(-1, 1)  # Add a random variation to the cash
+        self.cash = 9000 + np.random.uniform(-1000, 1000)  # Adjusted random variation to align with normalized prices
         self.trades = []
         self.past_pnls = []
         self.trade_flows = []
@@ -82,8 +82,6 @@ class ContinuousMarketEnv(BaseMarketEnv):
 
     # Designed to balance the inventory and execution quality.
     def calculate_reward(self, action_taken):
-        # Calculate the percentage of half spread to the current bid price
-        #half_spread_percentage = (self.data.iloc[self.current_step]['AskPrice_0'] - self.data.iloc[self.current_step]['BidPrice_0']) / self.data.iloc[self.current_step]['BidPrice_0']
         # Calculate the Profit and Loss (PnL)
         pnl = self.cash + self.inventory * self.data.iloc[self.current_step]['BidPrice_0']
         
@@ -110,11 +108,11 @@ class ContinuousMarketEnv(BaseMarketEnv):
     # This is the main reward function used in the environment.
     def _default_reward(self, pnl, action_taken):
         # Reward for making a trade
-        trade_reward = 1.5 if action_taken else 0  # Encourages action
+        trade_reward = 1.0 if action_taken else 0  # Encourages action
 
         # Inventory penalty to encourage balanced inventory
-        target_inventory = 5  # Adjusted target inventory for simplicity
-        dynamic_inventory_penalty = 0.5 if abs(self.inventory - target_inventory) > 2 else 0.07 # Dynamic penalty based on distance from target
+        target_inventory = 2  # Adjusted target inventory
+        dynamic_inventory_penalty = 0.1 if abs(self.inventory - target_inventory) > 0.2 else 0.05 # Dynamic penalty based on distance from target
         inventory_penalty = max(0, abs(self.inventory - target_inventory)) * dynamic_inventory_penalty
 
         # Execution quality reward/penalty based on how close the executed price is to the mid-market price
@@ -130,21 +128,21 @@ class ContinuousMarketEnv(BaseMarketEnv):
             # Penalize execution quality if executed price deviates significantly from mid price
             if abs(executed_price - mid_price) > 0.5 * spread:
                 # Penalize more for larger deviations
-                execution_quality_reward = -abs(executed_price - mid_price) * 0.12
+                execution_quality_reward = -abs(executed_price - mid_price) * 0.1
             else:
                 # Reward for good execution quality
-                execution_quality_reward = -abs(executed_price - mid_price) * 0.06
+                execution_quality_reward = -abs(executed_price - mid_price) * 0.05
 
         # Spread capture reward to encourage effective spread capture
         spread_capture_reward = 0
         if self.trades:
             if trade_type == "BUY":
-                spread_capture_reward = (mid_price - executed_price) * 0.07
+                spread_capture_reward = (mid_price - executed_price) * 0.05
             elif trade_type == "SELL":
-                spread_capture_reward = (executed_price - mid_price) * 0.07
+                spread_capture_reward = (executed_price - mid_price) * 0.05
 
         # Small reward for maintaining or increasing PnL over time
-        pnl_change_reward = (pnl - self.past_pnls[-1]) * 0.02 if len(self.past_pnls) > 1 else 0
+        pnl_change_reward = (pnl - self.past_pnls[-1]) * 0.01 if len(self.past_pnls) > 1 else 0
 
         # Adding the market metrics to the reward
         # These components are meant to encourage the agent to optimize for better market conditions
@@ -187,7 +185,7 @@ class ContinuousMarketEnv(BaseMarketEnv):
     def _realized_pnl_reward(self):
         # Focuses purely on the realized PnL from the trades
         realized_pnl = sum([trade[1] * trade[2] for trade in self.trades if trade[0] == "SELL"])
-        return realized_pnl * 0.01
+        return realized_pnl * 0.001  # Adjusted scaling
 
     # The _trade_completion_reward method rewards completing trades and penalizes incomplete trades or open positions.
     def _trade_completion_reward(self, action_taken):
@@ -195,13 +193,11 @@ class ContinuousMarketEnv(BaseMarketEnv):
         reward = 0.0
 
         if action_taken:
-            reward += 0.02  # Reward for completing a trade
-
+            reward += 0.002  # Adjusted reward for taking action
         if self.inventory == 0:
-            reward += 0.05  # Additional reward for balancing inventory
+            reward += 0.005  # Reward for balancing inventory
         else:
-            reward -= 0.01 * abs(self.inventory)  # Penalize for holding inventory
-
+            reward -= 0.001 * abs(self.inventory)
         return reward
 
     # The _spread_capture_reward method focuses on capturing the spread between the bid and ask prices.

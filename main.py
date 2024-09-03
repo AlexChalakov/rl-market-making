@@ -76,13 +76,13 @@ def evaluate_agent(agent, env, data, title, results_dir):
 def main():
     # Set random seed for reproducibility
     # good seed to test: 1724234196 with lobster data
-    set_seed(None)  # no fixed seed; use current time
+    set_seed(None) # no fixed seed; use current time
 
     # *** Default Option: Load Preprocessed Crypto Limit Order Book (LOB) Data ***
     # This option is active by default, loading the preprocessed crypto order book data
 
     # Uncomment the following lines to use the LOB data
-    data_file = os.path.join('data', 'data_pipeline', 'crypto_lob_data.csv')
+    data_file = os.path.join('data', 'data_pipeline', 'processed_crypto_lob_data.csv')
     if not os.path.exists(data_file):
         raise FileNotFoundError(f"The file {data_file} does not exist. Please run the data pipeline first.")
 

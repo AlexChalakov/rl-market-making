@@ -85,8 +85,25 @@ class DataPipeline:
         :param data: DataFrame containing the raw order book data.
         :return: Preprocessed DataFrame.
         """
-        # Convert 'Time' column from string to float
-        data['Time'] = data['Time'].apply(lambda x: time.mktime(datetime.datetime.strptime(x, '%Y-%m-%d %H:%M:%S').timetuple()))
+        # If the Time column is already in float, there's no need to convert from string
+        if data['Time'].dtype == np.float64 or data['Time'].dtype == np.int64:
+            pass  # Time is already in the correct format
+        else:
+            # Convert 'Time' column from string to float if necessary
+            data['Time'] = data['Time'].apply(lambda x: time.mktime(datetime.datetime.strptime(x, '%Y-%m-%d %H:%M:%S').timetuple()))
+
+
+        # **Normalization Adjustments**
+        # Normalize prices by dividing by 10,000 (to bring in line with the LOBSTER data)
+        price_columns = [col for col in data.columns if 'Price' in col]
+        for col in price_columns:
+            data[col] = data[col] / 100
+
+        # Normalize volumes based on the maximum volume in the dataset
+        volume_columns = [col for col in data.columns if 'Volume' in col]
+        max_volume = data[volume_columns].max().max()
+        for col in volume_columns:
+            data[col] = data[col] / max_volume
 
         # Calculate Midpoint from the best bid and ask prices
         data['Midpoint'] = (data['BidPrice_0'] + data['AskPrice_0']) / 2
@@ -148,3 +165,15 @@ if __name__ == "__main__":
     
     # Save the processed data
     pipeline.save_data(processed_data, 'crypto_lob_data.csv')
+
+    """
+    # Load the already collected crypto LOB data
+    crypto_data_path = 'data/data_pipeline/crypto_lob_data.csv'
+    crypto_data = pd.read_csv(crypto_data_path)
+    # Initialize DataPipeline
+    pipeline = DataPipeline()
+    # Preprocess the collected data with adjustments
+    processed_data = pipeline.preprocess_data(crypto_data)
+    # Save the processed data
+    pipeline.save_data(processed_data, 'processed_crypto_lob_data.csv')
+    """
