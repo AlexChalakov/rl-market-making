@@ -1,7 +1,6 @@
 import numpy as np
 from environment.base_env import BaseMarketEnv
 from gym import spaces
-from utils.indicators import Indicators
 # In a continuous environment, the actions the agent can take are not limited to a finite set but can take any value within a specified range. 
 
 # The ContinuousMarketEnv class extends the BaseMarketEnv class and defines a continuous action space for buying and selling assets.
@@ -38,8 +37,8 @@ class ContinuousMarketEnv(BaseMarketEnv):
     # if the ask adjustment is enough to sell at the best ask price, it sells.
     def step(self, action):
         bid_adjustment, trade_size = action
-        best_bid = self.data.iloc[self.current_step]['Bid Price 1']
-        best_ask = self.data.iloc[self.current_step]['Ask Price 1']
+        best_bid = self.data.iloc[self.current_step]['Bid Price 0']
+        best_ask = self.data.iloc[self.current_step]['Ask Price 0']
         spread = best_ask - best_bid
 
         # Enhanced action-to-order mapping logic
@@ -76,7 +75,7 @@ class ContinuousMarketEnv(BaseMarketEnv):
         state = self.get_current_state()
         
         # Store PnL and trade flow data
-        self.past_pnls.append(self.cash + self.inventory * self.data.iloc[self.current_step]['Bid Price 1'])
+        self.past_pnls.append(self.cash + self.inventory * self.data.iloc[self.current_step]['Bid Price 0'])
         self.trade_flows.append(self.cash) 
         
         return state, reward, done, {}
@@ -84,9 +83,9 @@ class ContinuousMarketEnv(BaseMarketEnv):
     # Designed to balance the inventory and execution quality.
     def calculate_reward(self, action_taken):
         # Calculate the percentage of half spread to the current bid price
-        half_spread_percentage = (self.data.iloc[self.current_step]['Ask Price 1'] - self.data.iloc[self.current_step]['Bid Price 1']) / self.data.iloc[self.current_step]['Bid Price 1']
+        half_spread_percentage = (self.data.iloc[self.current_step]['Ask Price 0'] - self.data.iloc[self.current_step]['Bid Price 0']) / self.data.iloc[self.current_step]['Bid Price 0']
         # Calculate the Profit and Loss (PnL)
-        pnl = self.cash + self.inventory * self.data.iloc[self.current_step]['Bid Price 1']
+        pnl = self.cash + self.inventory * self.data.iloc[self.current_step]['Bid Price 0']
         
         # New metrics calculation
         implementation_shortfall = self.implementation_shortfall()
@@ -121,8 +120,8 @@ class ContinuousMarketEnv(BaseMarketEnv):
         inventory_penalty = max(0, abs(self.inventory - target_inventory)) * dynamic_inventory_penalty
 
         # Execution quality reward/penalty based on how close the executed price is to the mid-market price
-        mid_price = (self.data.iloc[self.current_step]['Bid Price 1'] + self.data.iloc[self.current_step]['Ask Price 1']) / 2
-        spread = self.data.iloc[self.current_step]['Ask Price 1'] - self.data.iloc[self.current_step]['Bid Price 1']
+        mid_price = (self.data.iloc[self.current_step]['Bid Price 0'] + self.data.iloc[self.current_step]['Ask Price 0']) / 2
+        spread = self.data.iloc[self.current_step]['Ask Price 0'] - self.data.iloc[self.current_step]['Bid Price 0']
         execution_quality_reward = 0
         if self.trades:
             # Get the last trade details

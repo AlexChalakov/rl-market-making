@@ -50,10 +50,11 @@ class DataPipeline:
             ask_price = order_book['asks'][i][0] if i < len(order_book['asks']) else np.nan
             ask_volume = order_book['asks'][i][1] if i < len(order_book['asks']) else np.nan
 
-            data[f'BidPrice_{i}'] = bid_price
-            data[f'BidVolume_{i}'] = bid_volume
-            data[f'AskPrice_{i}'] = ask_price
-            data[f'AskVolume_{i}'] = ask_volume
+            # Renaming columns to match LOBSTER format
+            data[f'Bid Price {i + 1}'] = bid_price
+            data[f'Bid Size {i + 1}'] = bid_volume
+            data[f'Ask Price {i + 1}'] = ask_price
+            data[f'Ask Size {i + 1}'] = ask_volume
 
         return data
 
@@ -85,20 +86,37 @@ class DataPipeline:
         :param data: DataFrame containing the raw order book data.
         :return: Preprocessed DataFrame.
         """
+        # If the Time column is already in float, there's no need to convert from string
+        if data['Time'].dtype == np.float64 or data['Time'].dtype == np.int64:
+            pass  # Time is already in the correct format
+        else:
+            # Convert 'Time' column from string to float if necessary
+            data['Time'] = data['Time'].apply(lambda x: time.mktime(datetime.datetime.strptime(x, '%Y-%m-%d %H:%M:%S').timetuple()))
+
+        # **Normalization Adjustments**
+        # Adjust prices by subtracting 100 to bring in line with the LOBSTER data
+        price_columns = [col for col in data.columns if 'Price' in col]
+        for col in price_columns:
+            data[col] = data[col] - 100
+
+        # Ensure column names are correctly formatted (no underscores)
+        data = data.rename(columns=lambda x: x.replace('_', ' '))
+
+        # Feature Engineering
         # Calculate Midpoint from the best bid and ask prices
-        data['Midpoint'] = (data['BidPrice_0'] + data['AskPrice_0']) / 2
+        data['Midpoint'] = (data['Bid Price 0'] + data['Ask Price 0']) / 2
 
         # Calculate the bid-ask spread
-        data['Spread'] = data['AskPrice_0'] - data['BidPrice_0']
+        data['Spread'] = data['Ask Price 0'] - data['Bid Price 0']
 
         # Calculate Order Size Imbalance (OSI)
-        data['OrderSizeImbalance'] = (data['BidVolume_0'] - data['AskVolume_0']) / (data['BidVolume_0'] + data['AskVolume_0'])
+        data['Order Size Imbalance'] = (data['Bid Size 0'] - data['Ask Size 0']) / (data['Bid Size 0'] + data['Ask Size 0'])
 
         # Calculate Volume-Weighted Average Price (VWAP)
-        data['VWAP'] = ((data['BidPrice_0'] * data['BidVolume_0']) + (data['AskPrice_0'] * data['AskVolume_0'])) / (data['BidVolume_0'] + data['AskVolume_0'])
+        data['VWAP'] = ((data['Bid Price 0'] * data['Bid Size 0']) + (data['Ask Price 0'] * data['Ask Size 0'])) / (data['Bid Size 0'] + data['Ask Size 0'])
 
         # Calculate Relative Volume (RV)
-        data['RelativeVolume'] = data['BidVolume_0'] + data['AskVolume_0']
+        data['Relative Volume'] = data['Bid Size 0'] + data['Ask Size 0']
 
         # Fill missing values
         data = data.fillna(method='ffill').fillna(method='bfill')
@@ -106,9 +124,13 @@ class DataPipeline:
         # Apply EMA smoothing to the 'Midpoint' column
         data = apply_ema_all_data(self.ema, data)
 
-        # Select numeric columns for scaling, excluding the 'Time' column
+        # Scale only specific features, leaving prices and volumes unscaled
+        features_to_scale = ['Spread', 'Order Size Imbalance', 'VWAP', 'Relative Volume', 'Midpoint', 'Midpoint_EMA']
+        data[features_to_scale] = self.scaler.fit_transform(data[features_to_scale])
+
+        # Ensure all numeric columns are of type float32 for TensorFlow compatibility
         numeric_columns = data.select_dtypes(include=[np.number]).columns
-        data[numeric_columns] = self.scaler.fit_transform(data[numeric_columns])
+        data[numeric_columns] = data[numeric_columns].astype(np.float32)
 
         return data
 
@@ -133,11 +155,23 @@ if __name__ == "__main__":
     # Initialize DataPipeline
     pipeline = DataPipeline()
 
-    # Collect LOB data for 1 minute at 1-second intervals
+    # Collect LOB data for the specified duration
     lob_data_df = pipeline.collect_lob_data(symbol, EXCHANGE, interval=INTERVAL, duration=DURATION)
     
-    # Preprocess the collected data (optional)
+    # Preprocess the collected data
     processed_data = pipeline.preprocess_data(lob_data_df)
     
     # Save the processed data
     pipeline.save_data(processed_data, 'crypto_lob_data.csv')
+
+    """
+    # Load the already collected crypto LOB data
+    crypto_data_path = 'data/data_pipeline/crypto_lob_data.csv'
+    crypto_data = pd.read_csv(crypto_data_path)
+    # Initialize DataPipeline
+    pipeline = DataPipeline()
+    # Preprocess the collected data with adjustments
+    processed_data = pipeline.preprocess_data(crypto_data)
+    # Save the processed data
+    pipeline.save_data(processed_data, 'processed_crypto_lob_data.csv')
+    """
