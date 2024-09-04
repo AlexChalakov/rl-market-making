@@ -77,6 +77,8 @@ def main():
     # Set random seed for reproducibility
     set_seed(None)  # no fixed seed; use current time
 
+    # *** BE CAREFUL WITH COLUMN NAMES WHEN SWITCHING DATASET ***
+
     # *** Default Option: Load Preprocessed Crypto Limit Order Book (LOB) Data ***
     # This option is active by default, loading the preprocessed crypto order book data
 
