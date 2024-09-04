@@ -1,5 +1,5 @@
 import tensorflow as tf
-from keras.optimizers.legacy import Adam
+from keras.optimizers import Adam
 import numpy as np
 import pandas as pd
 
@@ -26,7 +26,7 @@ class PPOAgent:
     # The act method takes the current state as input and returns the action to take using the policy network.
     def act(self, state):
         state = np.expand_dims(state, axis=0).astype(np.float32)
-        action = self.policy_network.predict(state)[0]
+        action = self.policy_network.predict(state, verbose = 0)[0]
         #print(f"Action output: {action}")
         action = np.clip(action, self.env.action_space.low, self.env.action_space.high)
         #print(f"Clipped action: {action}")

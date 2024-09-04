@@ -154,7 +154,7 @@ def main():
             episode_cash.append(env.cash)
             episode_rewards.append(reward)
             step += 1
-            print(f"Step {step}, Reward: {reward}, Total Reward: {total_reward}")
+            #print(f"Step {step}, Reward: {reward}, Total Reward: {total_reward}")
 
         total_rewards.append(total_reward)
         inventory_per_episode.append(episode_inventory)

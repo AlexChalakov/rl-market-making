@@ -1,18 +1,20 @@
 import numpy as np
 from environment.base_env import BaseMarketEnv
-from gym import spaces
+from gymnasium import spaces
+import time
 # In a continuous environment, the actions the agent can take are not limited to a finite set but can take any value within a specified range. 
 
 # The ContinuousMarketEnv class extends the BaseMarketEnv class and defines a continuous action space for buying and selling assets.
-# This code simulates a market making environment with a focus on inventory management and execution quality.
+## This code simulates a market making environment with a focus on inventory management and execution quality.
 class ContinuousMarketEnv(BaseMarketEnv):
     def __init__(self, data, reward_type='default'):
         super(ContinuousMarketEnv, self).__init__(data)
         # Adjust action space to include trade size (units) in addition to price adjustments
-        self.action_space = spaces.Box(low=np.array([-1, -2]), high=np.array([1, 2]), dtype=np.float32)
-        self.inventory = 0  # Inventory for the agent
-        self.cash = 10000 # Adjusted cash for the agent considering normalized prices
-        self.trades = []  # List to store executed trades
+        self.action_space = spaces.Box(low=np.array([-1, -10]), high=np.array([1, 10]), dtype=np.float32)
+        self.observation_space = spaces.Box(low=0, high=1, shape=(94,), dtype=np.float32)
+        self.inventory = 0 # Inventory for the agent
+        self.cash = 10000 # Cash for the agent
+        self.trades = [] # List to store executed trades
         self.reward_type = reward_type
         self.past_pnls = []  # To store past PnL values for risk metrics
         self.trade_flows = []  # To store order flow imbalance data
@@ -21,26 +23,60 @@ class ContinuousMarketEnv(BaseMarketEnv):
 
     # The reset method initializes the environment at the beginning of an episode.
     # It resets the current step, inventory, cash, and trade history.
-    def reset(self):
-        self.current_step = np.random.randint(0, 10)  # Start from a random step within the first 10 steps
+    def reset(self, seed=None):
+        if seed is None:
+            seed = int(time.time())  # Use current time as the seed
+        self.current_step = np.random.randint(0, len(self.data)-501)  # Start from a random step within the first 10 steps
         self.inventory = 0
-        self.cash = 9000 + np.random.uniform(-1000, 1000)  # Adjusted random variation to align with normalized prices
+        self.cash = 10000
         self.trades = []
         self.past_pnls = []
         self.trade_flows = []
         self.action_count = 0
         return self.data.iloc[self.current_step].values
+        # return np.concatenate([self.data.iloc[self.current_step].values, np.zeros(7)]) , None
 
     # The step method takes an action as input and returns the next state, reward, done flag, and additional information.
     # Simulates order executions. 
     # If the bid adjustment is enough to buy at the best bid price, it buys; 
     # if the ask adjustment is enough to sell at the best ask price, it sells.
+    
+    # def get_current_state(self):
+    #     base_state = self.data.iloc[self.current_step].values
+
+    #     # Calculate additional features
+    #     # market_depth = self.data.iloc[self.current_step]['Ask Price 1'] - self.data.iloc[self.current_step]['Bid Price 1']
+    #     # recent_trade_volume = sum([trade[2] for trade in self.trades[-5:]])  # Sum of last 5 trades
+    #     # recent_trade_price = self.trades[-1][1] if self.trades else 0  # Price of last trade
+    #     # mid_price = (self.data.iloc[self.current_step]['Ask Price 1'] + self.data.iloc[self.current_step]['Bid Price 1']) / 2
+        
+    #     # for crypto data
+    #     market_depth = self.data.iloc[self.current_step]['AskPrice_0'] - self.data.iloc[self.current_step]['BidPrice_0']
+    #     recent_trade_volume = sum([trade[2] for trade in self.trades[-5:]])  # Sum of last 5 trades
+    #     recent_trade_price = self.trades[-1][1] if self.trades else 0  # Price of last trade
+    #     mid_price = (self.data.iloc[self.current_step]['AskPrice_0'] + self.data.iloc[self.current_step]['BidPrice_0']) / 2
+    #     ofi = self.order_flow_imbalance()
+
+    #     # Combine base state with additional features
+    #     full_state = np.concatenate([base_state, [self.inventory, self.cash, market_depth, recent_trade_volume, recent_trade_price, mid_price, ofi]])
+    #     return full_state
+    
     def step(self, action):
         bid_adjustment, trade_size = action
+        
+         # Action refinement: scaling trade_size down if conditions met
+        if self.calculate_sharpe_ratio() < 1.0:
+            trade_size *= 0.5  # Reduce action size for conservative play
+            
+        # best_bid = self.data.iloc[self.current_step]['Bid Price 1']
+        # best_ask = self.data.iloc[self.current_step]['Ask Price 1']
+        
+        # for crypto data
         best_bid = self.data.iloc[self.current_step]['BidPrice_0']
         best_ask = self.data.iloc[self.current_step]['AskPrice_0']
+        
         spread = best_ask - best_bid
-
+        
         # Enhanced action-to-order mapping logic
         bid_adjustment = bid_adjustment * spread
         executed_bid = best_bid + bid_adjustment
@@ -55,7 +91,7 @@ class ContinuousMarketEnv(BaseMarketEnv):
                 self.cash -= executed_bid * trade_size
                 self.trades.append(("BUY", executed_bid, trade_size))
                 action_taken = True
-                print(f"BUY: {trade_size} units at {executed_bid}, Inventory: {self.inventory}, Cash: {self.cash}")
+                # print(f"BUY: {trade_size} units at {executed_bid}, Inventory: {self.inventory}, Cash: {self.cash}")
 
             # Sell action (if inventory is sufficient)
             if trade_size < 0 and self.inventory >= abs(trade_size):
@@ -63,61 +99,111 @@ class ContinuousMarketEnv(BaseMarketEnv):
                 self.cash += abs(trade_size) * executed_ask
                 self.trades.append(("SELL", executed_ask, abs(trade_size)))
                 action_taken = True
-                print(f"SELL: {abs(trade_size)} units at {executed_ask}, Inventory: {self.inventory}, Cash: {self.cash}")
+                # print(f"SELL: {abs(trade_size)} units at {executed_ask}, Inventory: {self.inventory}, Cash: {self.cash}")
 
             # Increment the action counter when an action is taken
             self.action_count += 1
-
+            
+        # Calculate additional metrics for logging and analysis
+        sharpe_ratio = self.calculate_sharpe_ratio()
+        map_value = self.calculate_mean_absolute_position()
+        mdd_value = self.calculate_maximum_drawdown()
         done = self.advance_step()
+        
         # Calculate reward based on the action taken
         reward = self.calculate_reward(action_taken)
-
         state = self.get_current_state()
-        
+
+        # # Calculate the Profit and Loss (PnL)
+        # # Realized PnL: Profit from closed trades
+        # realized_pnl = sum([trade[1] * trade[2] if trade[0] == "SELL" else -trade[1] * trade[2] for trade in self.trades])
+
+        # Unrealized PnL: Value of current inventory at the current Bid Price (conservative)
+        # unrealized_pnl = self.inventory * self.data.iloc[self.current_step]['Bid Price 1']
         # Store PnL and trade flow data
-        self.past_pnls.append(self.cash + self.inventory * self.data.iloc[self.current_step]['BidPrice_0'])
+        # self.past_pnls.append((self.cash + self.inventory * self.data.iloc[self.current_step]['Bid Price 1'])/10000)
+        
+        #for crypto data
+        realized_pnl = sum([trade[1] * trade[2] if trade[0] == "SELL" else -trade[1] * trade[2] for trade in self.trades])
+        # Unrealized PnL: Value of current inventory at the current Bid Price (conservative)
+        unrealized_pnl = self.inventory * self.data.iloc[self.current_step]['BidPrice_0']
+
+        # Total PnL
+        pnl = (self.cash + realized_pnl + unrealized_pnl) / 10000
+        self.past_pnls.append(pnl)
         self.trade_flows.append(self.cash) 
         
-        return state, reward, done, {}
-
+        # half_spread_percentage = self.half_spread_percentage()
+        # implementation_shortfall = self.implementation_shortfall()
+        # order_flow_imbalance = self.order_flow_imbalance()
+        # rsi = self.rsi()
+        
+        # Log metrics for debugging and performance analysis
+        # print(f"Step: {self.current_step}, Sharpe Ratio: {sharpe_ratio}, MAP: {map_value}, MDD: {mdd_value}")
+        
+        return state, reward, done, None ,{}
+        
     # Designed to balance the inventory and execution quality.
     def calculate_reward(self, action_taken):
+        # Calculate the percentage of half spread to the current bid price
+        half_spread_percentage = self.half_spread_percentage()
+        # # Calculate the Profit and Loss (PnL)
+        # # Realized PnL: Profit from closed trades
+        # realized_pnl = sum([trade[1] * trade[2] if trade[0] == "SELL" else -trade[1] * trade[2] for trade in self.trades])
+
+        # Unrealized PnL: Value of current inventory at the current Bid Price (conservative)
+        # unrealized_pnl = self.inventory * self.data.iloc[self.current_step]['Bid Price 1']
+        
+        # for crypto data
         # Calculate the Profit and Loss (PnL)
-        pnl = self.cash + self.inventory * self.data.iloc[self.current_step]['BidPrice_0']
+        # Realized PnL: Profit from closed trades
+        realized_pnl = sum([trade[1] * trade[2] if trade[0] == "SELL" else -trade[1] * trade[2] for trade in self.trades])
+        # Unrealized PnL: Value of current inventory at the current Bid Price (conservative)
+        unrealized_pnl = self.inventory * self.data.iloc[self.current_step]['BidPrice_0']
+
+        # Total PnL
+        pnl = (self.cash + realized_pnl + unrealized_pnl) / 10000  # Normalize by dividing by initial cash
         
         # New metrics calculation
-        #implementation_shortfall = self.implementation_shortfall()
-        #order_flow_imbalance = self.order_flow_imbalance()
-        #rsi = self.rsi()
-        #mean_average_pricing = self.mean_average_pricing()
+        implementation_shortfall = self.implementation_shortfall()
+        map_value = self.calculate_mean_absolute_position()
+        mdd_value = self.calculate_maximum_drawdown()
+        sharpe_ratio = self.calculate_sharpe_ratio()
 
         if self.reward_type == 'default':
-            reward = self._default_reward(pnl, action_taken)
+            reward = self._default_reward(pnl, action_taken, half_spread_percentage, implementation_shortfall, map_value, mdd_value, sharpe_ratio)
         elif self.reward_type == 'asymmetrical':
             reward = self._asymmetrical_reward(pnl, action_taken)
         elif self.reward_type == 'realized_pnl':
             reward = self._realized_pnl_reward(pnl)
         elif self.reward_type == 'trade_completion':
             reward = self._trade_completion_reward(pnl, action_taken)
+        elif self.reward_type == 'spread_capture':
+            reward = self._spread_capture_reward(pnl, action_taken)
         else:
-            reward = self._default_reward(pnl, action_taken)  # Fallback to default
+            reward = self._default_reward(pnl, action_taken, half_spread_percentage, implementation_shortfall, map_value, mdd_value, sharpe_ratio)  # Fallback to default
 
         return reward
 
     # The _default_reward method calculates the reward based on the Profit and Loss (PnL) and the action taken.
     # This is the main reward function used in the environment.
-    def _default_reward(self, pnl, action_taken):
+    def _default_reward(self, pnl, action_taken, half_spread_percentage, implementation_shortfall, map_value, mdd_value, sharpe_ratio):
+        window_size = 5
         # Reward for making a trade
-        trade_reward = 1.0 if action_taken else 0  # Encourages action
+        trade_reward = 0.5 if action_taken else 0  # Encourages action
 
         # Inventory penalty to encourage balanced inventory
-        target_inventory = 2  # Adjusted target inventory
-        dynamic_inventory_penalty = 0.1 if abs(self.inventory - target_inventory) > 0.2 else 0.05 # Dynamic penalty based on distance from target
+        target_inventory = 1  # Adjusted target inventory for simplicity
+        dynamic_inventory_penalty = 0.1 if abs(self.inventory - target_inventory) > 2 else 0.01 # Dynamic penalty based on distance from target
         inventory_penalty = max(0, abs(self.inventory - target_inventory)) * dynamic_inventory_penalty
 
-        # Execution quality reward/penalty based on how close the executed price is to the mid-market price
+        # # Execution quality reward/penalty based on how close the executed price is to the mid-market price
+        # mid_price = (self.data.iloc[self.current_step]['Bid Price 1'] + self.data.iloc[self.current_step]['Ask Price 1']) / 2
+        # spread = self.data.iloc[self.current_step]['Ask Price 1'] - self.data.iloc[self.current_step]['Bid Price 1']
+        # for crypto data
         mid_price = (self.data.iloc[self.current_step]['BidPrice_0'] + self.data.iloc[self.current_step]['AskPrice_0']) / 2
         spread = self.data.iloc[self.current_step]['AskPrice_0'] - self.data.iloc[self.current_step]['BidPrice_0']
+        
         execution_quality_reward = 0
         if self.trades:
             # Get the last trade details
@@ -133,39 +219,102 @@ class ContinuousMarketEnv(BaseMarketEnv):
                 # Reward for good execution quality
                 execution_quality_reward = -abs(executed_price - mid_price) * 0.05
 
+        # Calculate rolling average cash and inventory
+        if len(self.trade_flows) > window_size:
+            rolling_avg_cash = np.mean(self.trade_flows[-window_size:])
+        else:
+            rolling_avg_cash = self.cash  # If not enough data, use current cash
+
+        if len(self.trades) > window_size:
+            rolling_avg_inventory = np.mean([trade[2] for trade in self.trades[-window_size:]])
+        else:
+            rolling_avg_inventory = self.inventory  # If not enough data, use current inventory
+            
+        # Penalties for excessive changes in cash and inventory
+        cash_change_penalty = -abs(self.cash - rolling_avg_cash) * 0.001
+        inventory_change_penalty = -abs(self.inventory - rolling_avg_inventory) * 0.005
+        
         # Spread capture reward to encourage effective spread capture
         spread_capture_reward = 0
         if self.trades:
             if trade_type == "BUY":
-                spread_capture_reward = (mid_price - executed_price) * 0.05
+                spread_capture_reward = (mid_price - executed_price) * 0.1
             elif trade_type == "SELL":
-                spread_capture_reward = (executed_price - mid_price) * 0.05
+                spread_capture_reward = (executed_price - mid_price) * 0.1
 
         # Small reward for maintaining or increasing PnL over time
-        pnl_change_reward = (pnl - self.past_pnls[-1]) * 0.01 if len(self.past_pnls) > 1 else 0
+        if len(self.past_pnls) > 1 and pnl > self.past_pnls[-1]:
+            pnl_change_reward = (pnl - self.past_pnls[-1]) * 1 if self.past_pnls else 0
+        else:
+            pnl_change_reward = 0
 
         # Adding the market metrics to the reward
         # These components are meant to encourage the agent to optimize for better market conditions
-        #spread_penalty = -abs(half_spread_percentage) * 0.0005
         #shortfall_penalty = -abs(implementation_shortfall) * 0.0005
         #imbalance_reward = -abs(order_flow_imbalance) * 0.0005  # You might want to consider reversing this sign depending on your interpretation
-        #rsi_penalty = -abs(rsi - 50) * 0.0001  # Penalize deviation from a neutral RSI
-        #map_reward = -abs(mean_average_pricing - mid_price) * 0.0005
+        # Adding risk management penalties
+        
+        
+        # Penalize high MAP (large positions) and high drawdown
+        map_penalty = (map_value - 1) * 0.1 if map_value > 1 else 0
+        mdd_penalty = (mdd_value - 0.03) * 0.1 if mdd_value > 0.03 else 0
 
-        # Total reward is the sum of the components
+        risk_penalty = -(map_penalty + mdd_penalty)
+
+        # Sharpe ratio bonus: Encourage high risk-adjusted return
+        sharpe_bonus = (sharpe_ratio - 0.5) * 0.05 if sharpe_ratio > 0.5 else 0
+        
+        spread_penalty = -abs(half_spread_percentage*100) ** 2 * 0.1
+
+        is_penalty = -abs(implementation_shortfall) * 0.01
+        
+        # Calculate OFI and integrate into reward function
+        ofi = self.order_flow_imbalance()
+        ofi_penalty = -abs(ofi) * 0.001  # Penalty for high OFI (order imbalance)
+        
+        # Modify reward calculation to penalize low cash levels
+        min_cash_threshold = 4000  # Minimum cash threshold
+        if self.cash < min_cash_threshold:
+            cash_penalty = -0.001 * (min_cash_threshold - self.cash)  # Penalize low cash levels
+        else:
+            cash_penalty = 0
+        
+        # Add inventory holding penalty
+        max_inventory_threshold = 3  # Threshold for maximum desired inventory
+        if self.inventory > max_inventory_threshold:
+            holding_inventory_penalty = -0.01 * (self.inventory - max_inventory_threshold)
+        else:
+            holding_inventory_penalty = 0
+        
+        # Modify reward function to focus on long-term profitability
+        if len(self.past_pnls) > 10:
+            long_term_reward = (np.mean(self.past_pnls[-10:]) - np.mean(self.past_pnls[:-10])) * 0.1 
+        else:
+            long_term_reward = 0
+        
+        # print(f"pnl: {pnl}, trade_reward: {trade_reward}, inventory_penalty: {inventory_penalty}, cash_change_penalty: {cash_change_penalty}, inventory_change_penalty: {inventory_change_penalty}, execution_quality_reward: {execution_quality_reward}, spread_capture_reward: {spread_capture_reward}, pnl_change_reward: {pnl_change_reward}, spread_penalty: {spread_penalty}, is_penalty: {is_penalty}, sharpe_bonus: {sharpe_bonus}, risk_penalty: {risk_penalty}, ofi_penalty: {ofi_penalty}, cash_penalty: {cash_penalty}, holding_inventory_penalty: {holding_inventory_penalty}, long_term_reward: {long_term_reward}")
         reward = (
             pnl 
             + trade_reward 
             - inventory_penalty 
+            + cash_change_penalty
+            + inventory_change_penalty
             + execution_quality_reward 
             + spread_capture_reward 
             + pnl_change_reward 
-            #+ spread_penalty 
-            #+ shortfall_penalty 
-            #+ imbalance_reward 
-            #+ rsi_penalty 
-            #+ map_reward
+            + spread_penalty 
+            + is_penalty 
+            + sharpe_bonus 
+            + risk_penalty
+            + ofi_penalty
+            + cash_penalty
+            + holding_inventory_penalty
+            + long_term_reward
         )
+        if sharpe_ratio < 0.5:
+            reward *= 0.9  # Penalize for poor risk-adjusted returns
+        elif sharpe_ratio > 1:
+            reward *= 1.1  # Reward for good risk-adjusted returns
 
         return reward
 
@@ -182,29 +331,41 @@ class ContinuousMarketEnv(BaseMarketEnv):
         return reward
 
     # The _realized_pnl_reward method focuses purely on the realized PnL from the trades.
-    def _realized_pnl_reward(self):
+    def _realized_pnl_reward(self, pnl):
         # Focuses purely on the realized PnL from the trades
         realized_pnl = sum([trade[1] * trade[2] for trade in self.trades if trade[0] == "SELL"])
-        return realized_pnl * 0.001  # Adjusted scaling
+        return realized_pnl * 0.01
 
     # The _trade_completion_reward method rewards completing trades and penalizes incomplete trades or open positions.
-    def _trade_completion_reward(self, action_taken):
+    def _trade_completion_reward(self, pnl, action_taken):
         # Rewards completing trades and penalizes incomplete trades or open positions
         reward = 0.0
 
         if action_taken:
-            reward += 0.002  # Adjusted reward for taking action
-        if self.inventory == 0:
-            reward += 0.005  # Reward for balancing inventory
-        else:
-            reward -= 0.001 * abs(self.inventory)
-        return reward
+            reward += 0.02  # Reward for completing a trade
 
-    # The _spread_capture_reward method focuses on capturing the spread between the bid and ask prices.
+        if self.inventory == 0:
+            reward += 0.05  # Additional reward for balancing inventory
+        else:
+            reward -= 0.01 * abs(self.inventory)  # Penalize for holding inventory
+
+        return reward
+    
+    def half_spread_percentage(self):
+        # Calculate the percentage of half spread to the current bid price
+        # half_spread_percentage = (self.data.iloc[self.current_step]['Ask Price 1'] - self.data.iloc[self.current_step]['Bid Price 1']) / self.data.iloc[self.current_step]['Bid Price 1']
+        
+        # for crypto data
+        half_spread_percentage = (self.data.iloc[self.current_step]['AskPrice_0'] - self.data.iloc[self.current_step]['BidPrice_0']) / self.data.iloc[self.current_step]['BidPrice_0']
+        return half_spread_percentage
+    
     def implementation_shortfall(self):
         # Implementation Shortfall (IS) calculation
         if not self.trades:
             return 0
+        # mid_price = (self.data.iloc[self.current_step]['Bid Price 1'] + self.data.iloc[self.current_step]['Ask Price 1']) / 2
+        
+        # for crypto data
         mid_price = (self.data.iloc[self.current_step]['BidPrice_0'] + self.data.iloc[self.current_step]['AskPrice_0']) / 2
         total_is = sum(abs(trade[1] - mid_price) * trade[2] for trade in self.trades)
         return total_is / len(self.trades) if self.trades else 0
@@ -216,7 +377,8 @@ class ContinuousMarketEnv(BaseMarketEnv):
             return 0
         total_buy = sum(flow for flow in self.trade_flows if flow > 0)
         total_sell = sum(flow for flow in self.trade_flows if flow < 0)
-        return total_buy - total_sell
+        ofi = (total_buy - total_sell)/10000
+        return ofi
     
     # The rsi method calculates the Relative Strength Index (RSI) based on the executed sell prices.
     def rsi(self):
@@ -231,11 +393,31 @@ class ContinuousMarketEnv(BaseMarketEnv):
         rs = average_gain / average_loss if average_loss != 0 else float('inf')
         return 100 - (100 / (1 + rs))
 
-    # The mean_average_pricing method calculates the Mean Average Pricing (MAP) based on the executed trades.
-    def mean_average_pricing(self):
-        # Mean Average Pricing (MAP) calculation
-        if not self.trades:
-            return 0
-        total_price = sum(trade[1] * trade[2] for trade in self.trades)
-        total_quantity = sum(trade[2] for trade in self.trades)
-        return total_price / total_quantity if total_quantity else 0
+    
+    def calculate_sharpe_ratio(self):
+        if len(self.past_pnls) <= 1:
+            return 0  # Not enough data to calculate Sharpe ratio
+        
+        # Calculate relative returns
+        returns = np.diff(self.past_pnls) / self.past_pnls[:-1]
+        
+        if len(returns) == 0:
+            return 0  # Not enough data for returns calculation
+        
+        mean_return = np.mean(returns)
+        std_return = np.std(returns, ddof=1)  # Use sample standard deviation (N-1)
+        
+        if std_return == 0:
+            return float('inf') if mean_return > 0 else 0  # Return infinite if constant positive returns, otherwise 0
+        
+        sharpe_ratio = mean_return / std_return
+        
+        return sharpe_ratio
+
+    def calculate_mean_absolute_position(self):
+        return np.mean(np.abs(self.inventory)) if self.inventory > 0 else 0
+
+    def calculate_maximum_drawdown(self):
+        peak = np.maximum.accumulate(self.past_pnls)
+        drawdown = (peak - self.past_pnls) / peak
+        return np.max(drawdown) if len(drawdown) > 0 else 0
