@@ -48,6 +48,7 @@ class PPOAgent:
             # Calculate advantage using the Generalized Advantage Estimation (GAE) method
             delta = reward + (1 - done) * self.gamma * next_value_pred - value_pred
             advantage = delta + self.gamma * self.lambda_ * (1 - done) * next_value_pred
+            #advantage = delta + self.lambda_ * (self.gamma * next_value_pred - value_pred) * (1 - done)
 
             # PPO objective function: Clipping the ratio to prevent large updates
             old_log_probs = tf.reduce_sum(action_pred * tf.stop_gradient(action), axis=1)

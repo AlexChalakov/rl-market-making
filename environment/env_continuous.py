@@ -9,7 +9,7 @@ class ContinuousMarketEnv(BaseMarketEnv):
     def __init__(self, data, reward_type='default'):
         super(ContinuousMarketEnv, self).__init__(data)
         # Adjust action space to include trade size (units) in addition to price adjustments
-        self.action_space = spaces.Box(low=np.array([-1, -50]), high=np.array([1, 50]), dtype=np.float32)
+        self.action_space = spaces.Box(low=np.array([-1, -10]), high=np.array([1, 10]), dtype=np.float32)
         self.inventory = 0 # Inventory for the agent
         self.cash = 5000 # Cash for the agent
         self.trades = [] # List to store executed trades
@@ -53,6 +53,7 @@ class ContinuousMarketEnv(BaseMarketEnv):
         # Limit trade size based on available liquidity 
         max_trade_size = min(ask_size, bid_size)
         trade_size = np.clip(trade_size * max_trade_size, -ask_size, bid_size)
+        #trade_size = np.clip(trade_size * max_trade_size * (self.cash / (self.cash + abs(self.inventory))), -ask_size, bid_size)
 
         # Enhanced action-to-order mapping logic
         bid_adjustment = bid_adjustment * spread * 1.5
@@ -98,22 +99,14 @@ class ContinuousMarketEnv(BaseMarketEnv):
         # Calculate PnL based on current cash and inventory value
         pnl = self.cash + self.inventory * self.data.iloc[self.current_step]['Bid Price 0']
         
-        
-        # New metrics calculation
-        implementation_shortfall = self.implementation_shortfall()
-        order_flow_imbalance = self.order_flow_imbalance()
-        rsi = self.rsi()
-        mean_average_pricing = self.mean_average_pricing()
-
-
-        # New metrics calculation
-        implementation_shortfall = self.implementation_shortfall()
-        order_flow_imbalance = self.order_flow_imbalance()
-        rsi = self.rsi()
-        mean_average_pricing = self.mean_average_pricing()
+        # Smoothing PnL changes over the last few steps (to avoid sharp fluctuations)
+        if len(self.past_pnls) > 10:
+            smoothed_pnl = np.mean(self.past_pnls[-10:])
+        else:
+            smoothed_pnl = pnl
 
         if self.reward_type == 'default':
-            reward = self._default_reward(pnl, action_taken, midpoint, spread, vwap, osi, rv)
+            reward = self._default_reward(smoothed_pnl, action_taken, midpoint, spread, vwap, osi, rv)
         elif self.reward_type == 'asymmetrical':
             reward = self._asymmetrical_reward(pnl, action_taken)
         elif self.reward_type == 'realized_pnl':
@@ -140,7 +133,6 @@ class ContinuousMarketEnv(BaseMarketEnv):
 
         # Execution quality reward/penalty based on how close the executed price is to the midpoint
         execution_quality_reward = 0
-        trade_size = 0
         if self.trades:
             # Get the last trade details
             last_trade = self.trades[-1]
@@ -164,8 +156,20 @@ class ContinuousMarketEnv(BaseMarketEnv):
         # Add PnL as a small baseline reward
         pnl_baseline_reward = pnl * 0.005  # Reduced to lower volatility
 
-        # PnL change reward based on the difference from the previous PnL
-        pnl_change_reward = (pnl - self.past_pnls[-1]) * 0.01 if len(self.past_pnls) > 1 else 0
+        # Smoothed PnL change reward (reduces volatility)
+        if len(self.past_pnls) > 1:
+            pnl_change_reward = (pnl - self.past_pnls[-1]) * 0.005  # Smaller impact to smooth out fluctuations
+        else:
+            pnl_change_reward = 0
+
+        # Sharpe Ratio Penalty (Risk-Adjusted Reward)
+        sharpe_ratio = self.calculate_sharpe_ratio()
+        if sharpe_ratio < 0.5:
+            reward_adjustment = 0.9
+        elif sharpe_ratio > 1:
+            reward_adjustment = 1.1
+        else:
+            reward_adjustment = 1.0
 
         # Total reward is the sum of the components
         reward = (
@@ -186,12 +190,24 @@ class ContinuousMarketEnv(BaseMarketEnv):
             print(f"Execution Quality Reward: {execution_quality_reward}")
             print(f"Spread Capture Reward: {spread_capture_reward}")
             print(f"PnL Change Reward: {pnl_change_reward}")
-            print(f"OSI Reward: {osi_reward}")
             print(f"PnL Baseline Reward: {pnl_baseline_reward}")
             print(f"Total Step Reward: {reward}")
         """
+
+        reward *= reward_adjustment  # Adjust reward based on Sharpe Ratio
         
         return reward
+    
+    # The calculate_sharpe_ratio method calculates the Sharpe Ratio as a risk-adjusted performance metric.
+    def calculate_sharpe_ratio(self):
+        # Calculate Sharpe Ratio as a risk-adjusted performance metric
+        returns = np.diff(self.past_pnls)  # Daily returns
+        if len(returns) < 2:
+            return 0
+        avg_return = np.mean(returns)
+        return_volatility = np.std(returns)
+        sharpe_ratio = avg_return / return_volatility if return_volatility != 0 else 0
+        return sharpe_ratio
 
     # The _asymmetrical_reward method calculates the reward based on the Profit and Loss (PnL) and the action taken.
     def _asymmetrical_reward(self, pnl, action_taken):
