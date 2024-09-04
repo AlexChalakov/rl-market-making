@@ -405,7 +405,12 @@ class ContinuousMarketEnv(BaseMarketEnv):
             return 0  # Not enough data for returns calculation
         
         mean_return = np.mean(returns)
+        # check if the return array has more than one elemant
+        if len(returns) < 2:
+            return float('inf') if mean_return > 0 else 0
+        
         std_return = np.std(returns, ddof=1)  # Use sample standard deviation (N-1)
+    
         
         if std_return == 0:
             return float('inf') if mean_return > 0 else 0  # Return infinite if constant positive returns, otherwise 0

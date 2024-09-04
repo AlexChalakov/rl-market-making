@@ -145,7 +145,7 @@ def main():
         print(f"Starting episode {episode + 1}/{num_episodes}")
         while not done:
             action = agent.act(state)
-            next_state, reward, done, _ = env.step(action)
+            next_state, reward, done, _, _ = env.step(action)
             agent.observe(state, action, reward, next_state, done)
             state = next_state
 

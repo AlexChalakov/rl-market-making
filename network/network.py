@@ -7,7 +7,8 @@ from keras import layers, models, regularizers
 def create_cnn_attention_policy_network(input_shape):
     model = models.Sequential()
     # First Conv Layer with BatchNormalization
-    model.add(layers.Conv1D(64, kernel_size=3, activation='relu', input_shape=input_shape, kernel_initializer='he_uniform'))
+    model.add(layers.Input(shape=input_shape))
+    model.add(layers.Conv1D(64, kernel_size=3, activation='relu',  kernel_initializer='he_uniform'))
     model.add(layers.BatchNormalization())
     model.add(layers.MaxPooling1D(pool_size=2))
     
@@ -39,7 +40,8 @@ def create_cnn_attention_policy_network(input_shape):
 def create_cnn_attention_value_network(input_shape):
     model = models.Sequential()
     # First Conv Layer with BatchNormalization
-    model.add(layers.Conv1D(64, kernel_size=3, activation='relu', input_shape=input_shape, kernel_initializer='he_normal'))
+    model.add(layers.Input(shape=input_shape))
+    model.add(layers.Conv1D(64, kernel_size=3, activation='relu', kernel_initializer='he_normal'))
     model.add(layers.BatchNormalization())
     model.add(layers.MaxPooling1D(pool_size=2))
     
