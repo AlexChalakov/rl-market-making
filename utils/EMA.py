@@ -48,7 +48,6 @@ class ExponentialMovingAverage(object):
         """
         self._value = None
 
-
 def load_ema(alpha: Union[List[float], float, None]) -> \
         Union[List[ExponentialMovingAverage], ExponentialMovingAverage, None]:
     """
@@ -68,42 +67,38 @@ def load_ema(alpha: Union[List[float], float, None]) -> \
     else:
         raise ValueError(f"_load_ema() --> unknown alpha type: {type(alpha)}")
 
-
 def apply_ema_all_data(
         ema: Union[List[ExponentialMovingAverage], ExponentialMovingAverage, None],
-        data: pd.DataFrame) -> pd.DataFrame:
+        data: Union[pd.DataFrame, pd.Series]) -> pd.Series:
     """
-    Apply exponential moving average to entire data set in a single batch.
+    Apply exponential moving average to the 'Midpoint' column (or other series) in a data set.
+    
     :param ema: EMA handler; if None, no EMA is applied
-    :param data: data set to smooth
-    :return: (pd.DataFrame) smoothed data set, if ema is provided
+    :param data: data set or series to smooth
+    :return: (pd.Series) smoothed data set, if ema is provided
     """
     if ema is None:
         return data
 
     smoothed_data = []
-    labels = data.columns.tolist()
 
     if isinstance(ema, ExponentialMovingAverage):
-        for value in data['Midpoint'].values:  # Apply EMA to 'Midpoint' column
+        for value in data.values:  # Apply EMA to the series values
             ema.step(value=value)
             smoothed_data.append(ema.value)
-        data['Midpoint_EMA'] = smoothed_data  # Add new column with EMA values
-        return data
+        return pd.Series(smoothed_data, index=data.index, name=f'{data.name}_EMA')
+    
     elif isinstance(ema, list):
         # Assuming you want to apply multiple EMA values to different columns
-        for column in data.columns:
+        for e in ema:
             smoothed_data = []
-            for e in ema:
-                for value in data[column].values:
-                    e.step(value=value)
-                    smoothed_data.append(e.value)
-            data[f'{column}_EMA'] = smoothed_data
+            for value in data.values:
+                e.step(value=value)
+                smoothed_data.append(e.value)
+            data[f'{data.name}_EMA'] = smoothed_data
         return data
     else:
         raise ValueError(f"apply_ema_all_data() --> unknown ema type: {type(ema)}")
-
-
 
 def reset_ema(ema: Union[List[ExponentialMovingAverage], ExponentialMovingAverage, None]) -> \
         Union[List[ExponentialMovingAverage], ExponentialMovingAverage, None]:

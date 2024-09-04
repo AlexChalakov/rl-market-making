@@ -9,9 +9,9 @@ class ContinuousMarketEnv(BaseMarketEnv):
     def __init__(self, data, reward_type='default'):
         super(ContinuousMarketEnv, self).__init__(data)
         # Adjust action space to include trade size (units) in addition to price adjustments
-        self.action_space = spaces.Box(low=np.array([-1, -10]), high=np.array([1, 10]), dtype=np.float32)
+        self.action_space = spaces.Box(low=np.array([-1, -50]), high=np.array([1, 50]), dtype=np.float32)
         self.inventory = 0 # Inventory for the agent
-        self.cash = 10000 # Cash for the agent
+        self.cash = 5000 # Cash for the agent
         self.trades = [] # List to store executed trades
         self.reward_type = reward_type
         self.past_pnls = []  # To store past PnL values for risk metrics
@@ -24,7 +24,7 @@ class ContinuousMarketEnv(BaseMarketEnv):
     def reset(self):
         self.current_step = np.random.randint(0, 10)  # Start from a random step within the first 10 steps
         self.inventory = 0
-        self.cash = 9000 + np.random.uniform(-1000, 1000)  # Add a random variation to the cash
+        self.cash = 5000 + np.random.uniform(-1000, 1000)  # Add a random variation to the cash
         self.trades = []
         self.past_pnls = []
         self.trade_flows = []
@@ -37,12 +37,25 @@ class ContinuousMarketEnv(BaseMarketEnv):
     # if the ask adjustment is enough to sell at the best ask price, it sells.
     def step(self, action):
         bid_adjustment, trade_size = action
+        # Main data columns: 'Bid Price 0', 'Ask Price 0', 'Bid Size 0', 'Ask Size 0'
         best_bid = self.data.iloc[self.current_step]['Bid Price 0']
         best_ask = self.data.iloc[self.current_step]['Ask Price 0']
-        spread = best_ask - best_bid
+        bid_size = self.data.iloc[self.current_step]['Bid Size 0']
+        ask_size = self.data.iloc[self.current_step]['Ask Size 0']
+
+        # Feature engineering columns
+        midpoint = self.data.iloc[self.current_step]['Midpoint']
+        spread = self.data.iloc[self.current_step]['Spread']
+        vwap = self.data.iloc[self.current_step]['VWAP']
+        osi = self.data.iloc[self.current_step]['OrderSizeImbalance']
+        rv = self.data.iloc[self.current_step]['RelativeVolume']
+
+        # Limit trade size based on available liquidity 
+        max_trade_size = min(ask_size, bid_size)
+        trade_size = np.clip(trade_size * max_trade_size, -ask_size, bid_size)
 
         # Enhanced action-to-order mapping logic
-        bid_adjustment = bid_adjustment * spread
+        bid_adjustment = bid_adjustment * spread * 1.5
         executed_bid = best_bid + bid_adjustment
         executed_ask = best_ask - bid_adjustment  # Symmetrical adjustment
 
@@ -70,22 +83,21 @@ class ContinuousMarketEnv(BaseMarketEnv):
 
         done = self.advance_step()
         # Calculate reward based on the action taken
-        reward = self.calculate_reward(action_taken)
+        reward = self.calculate_reward(action_taken, midpoint, spread, vwap, osi, rv)
 
         state = self.get_current_state()
         
         # Store PnL and trade flow data
-        self.past_pnls.append(self.cash + self.inventory * self.data.iloc[self.current_step]['Bid Price 0'])
-        self.trade_flows.append(self.cash) 
-        
+        self.past_pnls.append(self.cash + self.inventory * best_bid)
+        self.trade_flows.append(self.cash)
+
         return state, reward, done, {}
 
     # Designed to balance the inventory and execution quality.
-    def calculate_reward(self, action_taken):
-        # Calculate the percentage of half spread to the current bid price
-        half_spread_percentage = (self.data.iloc[self.current_step]['Ask Price 0'] - self.data.iloc[self.current_step]['Bid Price 0']) / self.data.iloc[self.current_step]['Bid Price 0']
-        # Calculate the Profit and Loss (PnL)
+    def calculate_reward(self, action_taken, midpoint, spread, vwap, osi, rv):
+        # Calculate PnL based on current cash and inventory value
         pnl = self.cash + self.inventory * self.data.iloc[self.current_step]['Bid Price 0']
+        
         
         # New metrics calculation
         implementation_shortfall = self.implementation_shortfall()
@@ -93,8 +105,15 @@ class ContinuousMarketEnv(BaseMarketEnv):
         rsi = self.rsi()
         mean_average_pricing = self.mean_average_pricing()
 
+
+        # New metrics calculation
+        implementation_shortfall = self.implementation_shortfall()
+        order_flow_imbalance = self.order_flow_imbalance()
+        rsi = self.rsi()
+        mean_average_pricing = self.mean_average_pricing()
+
         if self.reward_type == 'default':
-            reward = self._default_reward(pnl, action_taken, half_spread_percentage, implementation_shortfall, order_flow_imbalance, rsi, mean_average_pricing)
+            reward = self._default_reward(pnl, action_taken, midpoint, spread, vwap, osi, rv)
         elif self.reward_type == 'asymmetrical':
             reward = self._asymmetrical_reward(pnl, action_taken)
         elif self.reward_type == 'realized_pnl':
@@ -104,73 +123,74 @@ class ContinuousMarketEnv(BaseMarketEnv):
         elif self.reward_type == 'spread_capture':
             reward = self._spread_capture_reward(pnl, action_taken)
         else:
-            reward = self._default_reward(pnl, action_taken, half_spread_percentage, implementation_shortfall, order_flow_imbalance, rsi, mean_average_pricing)  # Fallback to default
+            reward = self._default_reward(pnl, action_taken, midpoint, spread, vwap, osi, rv)
 
         return reward
 
     # The _default_reward method calculates the reward based on the Profit and Loss (PnL) and the action taken.
     # This is the main reward function used in the environment.
-    def _default_reward(self, pnl, action_taken, half_spread_percentage, implementation_shortfall, order_flow_imbalance, rsi, mean_average_pricing):
+    def _default_reward(self, pnl, action_taken, midpoint, spread, vwap, osi, rv):
         # Reward for making a trade
-        trade_reward = 1.0 if action_taken else 0  # Encourages action
+        trade_reward = 1.5 if action_taken else 0  # Encourages action, slightly reduced
 
         # Inventory penalty to encourage balanced inventory
         target_inventory = 2  # Adjusted target inventory for simplicity
-        dynamic_inventory_penalty = 0.1 if abs(self.inventory - target_inventory) > 2 else 0.05 # Dynamic penalty based on distance from target
+        dynamic_inventory_penalty = 0.05 if abs(self.inventory - target_inventory) > 2 else 0.025  # Further reduced
         inventory_penalty = max(0, abs(self.inventory - target_inventory)) * dynamic_inventory_penalty
 
-        # Execution quality reward/penalty based on how close the executed price is to the mid-market price
-        mid_price = (self.data.iloc[self.current_step]['Bid Price 0'] + self.data.iloc[self.current_step]['Ask Price 0']) / 2
-        spread = self.data.iloc[self.current_step]['Ask Price 0'] - self.data.iloc[self.current_step]['Bid Price 0']
+        # Execution quality reward/penalty based on how close the executed price is to the midpoint
         execution_quality_reward = 0
+        trade_size = 0
         if self.trades:
             # Get the last trade details
             last_trade = self.trades[-1]
             # Unpack the trade details
             trade_type, executed_price, trade_size = last_trade
 
-            # Penalize execution quality if executed price deviates significantly from mid price
-            if abs(executed_price - mid_price) > 0.5 * spread:
-                # Penalize more for larger deviations
-                execution_quality_reward = -abs(executed_price - mid_price) * 0.1
+            # Reduce the impact of execution quality
+            if abs(executed_price - midpoint) > 0.5 * spread:
+                execution_quality_reward = -abs(executed_price - midpoint) * 0.1  # Reduced further
             else:
-                # Reward for good execution quality
-                execution_quality_reward = -abs(executed_price - mid_price) * 0.05
+                execution_quality_reward = -abs(executed_price - midpoint) * 0.03  # Reduced further
 
         # Spread capture reward to encourage effective spread capture
         spread_capture_reward = 0
         if self.trades:
             if trade_type == "BUY":
-                spread_capture_reward = (mid_price - executed_price) * 0.05
+                spread_capture_reward = (midpoint - executed_price) * 0.05  # Reduced
             elif trade_type == "SELL":
-                spread_capture_reward = (executed_price - mid_price) * 0.05
+                spread_capture_reward = (executed_price - midpoint) * 0.3  # Reduced
 
-        # Small reward for maintaining or increasing PnL over time
+        # Add PnL as a small baseline reward
+        pnl_baseline_reward = pnl * 0.005  # Reduced to lower volatility
+
+        # PnL change reward based on the difference from the previous PnL
         pnl_change_reward = (pnl - self.past_pnls[-1]) * 0.01 if len(self.past_pnls) > 1 else 0
-
-        # Adding the market metrics to the reward
-        # These components are meant to encourage the agent to optimize for better market conditions
-        #spread_penalty = -abs(half_spread_percentage) * 0.0005
-        #shortfall_penalty = -abs(implementation_shortfall) * 0.0005
-        #imbalance_reward = -abs(order_flow_imbalance) * 0.0005  # You might want to consider reversing this sign depending on your interpretation
-        #rsi_penalty = -abs(rsi - 50) * 0.0001  # Penalize deviation from a neutral RSI
-        #map_reward = -abs(mean_average_pricing - mid_price) * 0.0005
 
         # Total reward is the sum of the components
         reward = (
-            pnl 
-            + trade_reward 
-            - inventory_penalty 
-            + execution_quality_reward 
-            + spread_capture_reward 
-            + pnl_change_reward 
-            #+ spread_penalty 
-            #+ shortfall_penalty 
-            #+ imbalance_reward 
-            #+ rsi_penalty 
-            #+ map_reward
+            pnl_baseline_reward
+            + trade_reward
+            - inventory_penalty
+            + execution_quality_reward
+            + spread_capture_reward
+            + pnl_change_reward
         )
 
+        """
+        # Print the reward components if an action was taken
+        if action_taken:
+            print(f"Action Taken: {'BUY' if trade_type == 'BUY' else 'SELL'}")
+            print(f"Trade Reward: {trade_reward}")
+            print(f"Inventory Penalty: {inventory_penalty}")
+            print(f"Execution Quality Reward: {execution_quality_reward}")
+            print(f"Spread Capture Reward: {spread_capture_reward}")
+            print(f"PnL Change Reward: {pnl_change_reward}")
+            print(f"OSI Reward: {osi_reward}")
+            print(f"PnL Baseline Reward: {pnl_baseline_reward}")
+            print(f"Total Step Reward: {reward}")
+        """
+        
         return reward
 
     # The _asymmetrical_reward method calculates the reward based on the Profit and Loss (PnL) and the action taken.
