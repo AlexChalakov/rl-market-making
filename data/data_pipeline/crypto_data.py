@@ -51,10 +51,10 @@ class DataPipeline:
             ask_volume = order_book['asks'][i][1] if i < len(order_book['asks']) else np.nan
 
             # Renaming columns to match LOBSTER format
-            data[f'Bid Price {i + 1}'] = bid_price
-            data[f'Bid Size {i + 1}'] = bid_volume
-            data[f'Ask Price {i + 1}'] = ask_price
-            data[f'Ask Size {i + 1}'] = ask_volume
+            data[f'Bid Price {i}'] = bid_price
+            data[f'Bid Size {i}'] = bid_volume
+            data[f'Ask Price {i}'] = ask_price
+            data[f'Ask Size {i}'] = ask_volume
 
         return data
 

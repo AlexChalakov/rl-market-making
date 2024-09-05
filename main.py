@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 from environment.env_continuous import ContinuousMarketEnv
 from agent.rl_agent import PPOAgent
 from network.network import create_cnn_attention_policy_network, create_cnn_attention_value_network
-from utils.utils import load_lobster_data, preprocess_lobster_data, save_preprocessed_data, split_data, augment_data
+from utils.utils import augment_data, load_lobster_data, preprocess_lobster_data, save_preprocessed_data, split_data
 
 # Set fixed seed for reproducibility
 def set_seed(seed):
@@ -20,15 +20,19 @@ def set_seed(seed):
     print(f"Using seed: {seed}")
 
 # Evaluate the agent on the given data
-def evaluate_agent(agent, env, data, title, results_dir):
-    env = ContinuousMarketEnv(data)
+def evaluate_agent(agent, env, data, title, results_dir, plot_sharpe=False):
+    env.data = data
     state = env.reset()
     done = False
     total_reward = 0
     episode_inventory = []
     episode_cash = []
     episode_rewards = []
+    sharpe_ratios = []
     step = 0
+    buy_steps = []
+    sell_steps = []
+
     while not done:
         action = agent.act(state)
         next_state, reward, done, _ = env.step(action)
@@ -38,11 +42,62 @@ def evaluate_agent(agent, env, data, title, results_dir):
         episode_inventory.append(env.inventory)
         episode_cash.append(env.cash)
         episode_rewards.append(reward)
+
+        # Collect steps for "BUY" and "SELL" to plot
+        if len(env.trades) > 0:
+            last_trade = env.trades[-1]
+            trade_type, executed_price, trade_size = last_trade
+            if trade_type == "BUY":
+                buy_steps.append(step)
+            elif trade_type == "SELL":
+                sell_steps.append(step)
+
+        # Sharpe ratio calculation if required
+        if plot_sharpe:
+            sharpe_ratio = env.calculate_sharpe_ratio()
+            sharpe_ratios.append(sharpe_ratio)
+
         step += 1
 
     print(f"{title} - Total Reward: {total_reward}")
-    
-    # Save the evaluation plots
+
+    # Step rewards plot with green dots for SELL and red dots for BUY
+    plt.figure(figsize=(12, 6))
+    plt.plot(range(1, len(episode_rewards) + 1), episode_rewards, label='Step Reward', color='purple')
+    plt.scatter(buy_steps, [episode_rewards[i] for i in buy_steps], color='red', label='BUY', marker='o', s=20)
+    plt.scatter(sell_steps, [episode_rewards[i] for i in sell_steps], color='green', label='SELL', marker='o', s=20)
+    plt.xlabel('Step')
+    plt.ylabel('Reward')
+    plt.title(f'{title} Step Rewards over Time with Actions')
+    plt.legend()
+    plt.savefig(os.path.join(results_dir, f'{title.lower().replace(" ", "_")}_step_rewards_with_actions.png'))
+    #plt.show()
+
+    # Overlay Two Lines: One for Buys and One for Sells
+    plt.figure(figsize=(12, 6))
+    plt.plot(range(1, len(episode_rewards) + 1), episode_rewards, label='Step Reward', color='purple')
+    # Overlay buy and sell points with different markers and lines
+    plt.plot(buy_steps, [episode_rewards[i] for i in buy_steps], 'r-', label='BUY')
+    plt.plot(sell_steps, [episode_rewards[i] for i in sell_steps], 'g-', label='SELL')
+    plt.xlabel('Step')
+    plt.ylabel('Reward')
+    plt.title(f'{title} Step Rewards Over Time')
+    plt.legend()
+    plt.savefig(os.path.join(results_dir, f'{title.lower().replace(" ", "_")}_step_rewards_with_actions_overlay2lines.png'))
+    #plt.show()
+
+    # Sharpe ratio over time (for Episode 1, 5, 10 or when plot_sharpe=True)
+    if plot_sharpe:
+        plt.figure(figsize=(12, 6))
+        plt.plot(range(1, len(sharpe_ratios) + 1), sharpe_ratios, label='Sharpe Ratio', color='orange')
+        plt.xlabel('Step')
+        plt.ylabel('Sharpe Ratio')
+        plt.title(f'{title} Sharpe Ratio Over Time')
+        plt.legend()
+        plt.savefig(os.path.join(results_dir, f'{title.lower().replace(" ", "_")}_sharpe_ratio.png'))
+        #plt.show()
+
+    # PnL over time
     plt.figure(figsize=(12, 6))
     plt.plot(episode_cash, label='Cash', color='green')
     plt.xlabel('Step')
@@ -50,8 +105,9 @@ def evaluate_agent(agent, env, data, title, results_dir):
     plt.title(f'{title} Cash Levels Over Time')
     plt.legend()
     plt.savefig(os.path.join(results_dir, f'{title.lower().replace(" ", "_")}_cash_levels.png'))
-    plt.show()
+    #plt.show()
 
+    # Inventory levels over time
     plt.figure(figsize=(12, 6))
     plt.plot(episode_inventory, label='Inventory', color='blue')
     plt.xlabel('Step')
@@ -59,8 +115,9 @@ def evaluate_agent(agent, env, data, title, results_dir):
     plt.title(f'{title} Inventory Levels Over Time')
     plt.legend()
     plt.savefig(os.path.join(results_dir, f'{title.lower().replace(" ", "_")}_inventory_levels.png'))
-    plt.show()
+    #plt.show()
 
+    # Cumulative reward plot
     cumulative_reward = np.cumsum(episode_rewards)
     plt.figure(figsize=(12, 6))
     plt.plot(cumulative_reward, label='Cumulative Reward', color='red')
@@ -69,38 +126,69 @@ def evaluate_agent(agent, env, data, title, results_dir):
     plt.title(f'{title} Cumulative Reward Over Time')
     plt.legend()
     plt.savefig(os.path.join(results_dir, f'{title.lower().replace(" ", "_")}_cumulative_reward.png'))
-    plt.show()
+    #plt.show()
 
-    return total_reward
+    return total_reward, sharpe_ratios
 
+# Evaluate on validation and test data
+def evaluate_on_validation_test(agent, env, val_data, test_data, results_dir):
+    val_total_reward = evaluate_agent(agent, env, val_data, "Validation", results_dir, plot_sharpe=False)
+    print(f"Validation Total Reward: {val_total_reward}")
+
+    test_total_reward = evaluate_agent(agent, env, test_data, "Test", results_dir, plot_sharpe=False) 
+    print(f"Test Total Reward: {test_total_reward}")
+
+# Main function to train the agent
 def main():
     # Set random seed for reproducibility
-    set_seed(None)  # no fixed seed; use current time
+    #1725487641
+    set_seed(1724232630)  # no fixed seed; use current time
 
-    # *** BE CAREFUL WITH COLUMN NAMES WHEN SWITCHING DATASET ***
+    # Prompt user for dataset selection
+    print("Select dataset to load:")
+    print("0: LOBSTER Data")
+    print("1: Crypto Data")
+    data_choice = input("Enter 0 for LOBSTER or 1 for Crypto: ")
 
-    # *** Default Option: Load Preprocessed Crypto Limit Order Book (LOB) Data ***
-    # This option is active by default, loading the preprocessed crypto order book data
+    processed_data = None
+    data_type = "crypto" # by default
 
-    # Uncomment the following lines to use the LOB data
-    data_file = os.path.join('data', 'data_pipeline', 'processed_crypto_lob_data.csv')
-    if not os.path.exists(data_file):
-         raise FileNotFoundError(f"The file {data_file} does not exist. Please run the data pipeline first.")
+    # Load the selected dataset
+    if data_choice == "0":
+        # *** Alternative Option: Load and Preprocess LOBSTER Data ***
+        # Load and preprocess LOBSTER data
+        message_file = 'data/experimentation/level 5/AAPL_2012-06-21_34200000_57600000_message_5.csv'
+        orderbook_file = 'data/experimentation/level 5/AAPL_2012-06-21_34200000_57600000_orderbook_5.csv'
+        limit = 20000
+        
+        print("Loading and preprocessing LOBSTER data...")
+        lob_data = load_lobster_data(message_file, orderbook_file, limit)
+        processed_data = preprocess_lobster_data(lob_data)
 
-    print("Loading preprocessed crypto order book data...")
-    processed_data = pd.read_csv(data_file)
+        data_type = "lobster"
+        results_dir = "results_lobster"
+        
+    elif data_choice == "1":
+        # *** Default Option: Load Preprocessed Crypto Limit Order Book (LOB) Data ***
+        # Load preprocessed Crypto Limit Order Book (LOB) data
+        data_file = os.path.join('data', 'data_pipeline', 'processed_crypto_lob_data.csv')
+        if not os.path.exists(data_file):
+            raise FileNotFoundError(f"The file {data_file} does not exist. Please run the data pipeline first.")
+        
+        print("Loading preprocessed crypto order book data...")
+        processed_data = pd.read_csv(data_file)
+        
+        data_type = "crypto"
+        results_dir = "results_crypto"
+        
+    else:
+        print("Invalid selection. Please enter 0 for LOBSTER or 1 for Crypto.")
+        return  # Exit the program if invalid input is given
 
-    # *** Alternative Option: Load and Preprocess LOBSTER Data ***
-    # Uncomment the following lines to use the LOBSTER data
-    """
-    message_file = 'data/experimentation/level 5/AAPL_2012-06-21_34200000_57600000_message_5.csv'
-    orderbook_file = 'data/experimentation/level 5/AAPL_2012-06-21_34200000_57600000_orderbook_5.csv'
-    limit = 20000
-    
-    print("Loading and preprocessing LOBSTER data...")
-    lob_data = load_lobster_data(message_file, orderbook_file, limit)
-    processed_data = preprocess_lobster_data(lob_data)
-    """
+    # Create the results directory if it doesn't exist
+    if not os.path.exists(results_dir):
+        os.makedirs(results_dir)
+
     # Split the data into training, validation, and testing sets
     train_data, val_data, test_data = split_data(processed_data)
 
@@ -112,7 +200,7 @@ def main():
 
     # Initialize environment with training data
     print("Initializing Environment, NN and Agent.")
-    env = ContinuousMarketEnv(train_data)
+    env = ContinuousMarketEnv(train_data, data_type=data_type)
     # Adjust the environment parameters as needed
     #env = ContinuousMarketEnv(processed_data, reward_type='asymmetrical')
 
@@ -129,10 +217,8 @@ def main():
     rewards_per_episode = []
     inventory_per_episode = []
     cash_per_episode = []
-    results_dir = "results_crypto" 
-        # Create a new directory called "results" if it doesn't exist
-    if not os.path.exists(results_dir):
-        os.makedirs(results_dir)
+    best_bid_per_episode = []
+    sharpe_ratios_dict = {}
 
     # Training loop
     num_episodes = 10  # Adjust as needed
@@ -143,6 +229,7 @@ def main():
         episode_inventory = []
         episode_cash = []
         episode_rewards = []
+        episode_best_bids = []
         step = 0
         print(f"Starting episode {episode + 1}/{num_episodes}")
         while not done:
@@ -155,6 +242,8 @@ def main():
             episode_inventory.append(env.inventory)
             episode_cash.append(env.cash)
             episode_rewards.append(reward)
+            best_bid = env.get_best_bid()
+            episode_best_bids.append(best_bid)
             step += 1
             print(f"Step {step}, Reward: {reward}, Total Reward: {total_reward}")
 
@@ -162,6 +251,7 @@ def main():
         inventory_per_episode.append(episode_inventory)
         cash_per_episode.append(episode_cash)
         rewards_per_episode.append(episode_rewards)
+        best_bid_per_episode.append(episode_best_bids)
         print(f"Episode {episode + 1}/{num_episodes} completed with total reward: {total_reward}")
 
         # Plot Step Rewards Over Time for the current episode
@@ -174,13 +264,39 @@ def main():
         plt.savefig(os.path.join(results_dir, f'step_rewards_episode_{episode + 1}.png'))
         # plt.show()
 
-    # Combined plots for episodes 1, 5, and 10
-    episodes_to_plot = [0, 4, 9]  # Indexing starts at 0, so 1st, 5th, and 10th episodes are 0, 4, 9
+        # Plot Step Rewards with BUY/SELL markers for episodes 1, 5, and 10
+        if episode + 1 in [1, 5, 10]:
+            _, sharpe_ratios = evaluate_agent(agent, env, train_data, f"Episode {episode + 1}", results_dir, plot_sharpe=True)
+            sharpe_ratios_dict[f'Episode {episode + 1}'] = sharpe_ratios
 
     # Save the trained agent
     print("Saving the trained agent...")
     agent.save(os.path.join(results_dir, 'saved_policy_model.h5'), os.path.join(results_dir, 'saved_value_model.h5'))
     print("Training completed and model saved.")
+
+    # Combined Sharpe Ratio plot for Episodes 1, 5, 10 (you can refine this after Episode 1 works)
+    plt.figure(figsize=(12, 6))
+    for ep_num in sharpe_ratios_dict:
+        plt.plot(sharpe_ratios_dict[ep_num], label=f'Episode {ep_num}')
+    plt.xlabel('Step')
+    plt.ylabel('Sharpe Ratio')
+    plt.title('Sharpe Ratio Over Time - Episodes 1, 5, 10')
+    plt.legend()
+    plt.savefig(os.path.join(results_dir, 'sharpe_ratio_combined.png'))
+    #plt.show()
+
+  # Plot PnL over time for all 10 episodes
+    plt.figure(figsize=(12, 6))
+    for ep_num in range(num_episodes):
+        pnl = [cash_per_episode[ep_num][step] + inventory_per_episode[ep_num][step] * current_bid_price for step, current_bid_price in enumerate(best_bid_per_episode[ep_num])]
+        plt.plot(pnl, label=f'Episode {ep_num + 1}')
+        
+    plt.xlabel('Step')
+    plt.ylabel('PnL')
+    plt.title('Profit and Loss (PnL) Over Time for All Episodes')
+    plt.legend()
+    plt.savefig(os.path.join(results_dir, 'pnl_over_time_all_episodes.png'))
+    #plt.show()
 
     # After the training loop, plot the loss
     plt.figure(figsize=(12, 6))
@@ -190,7 +306,7 @@ def main():
     plt.title('Training Loss Over Time')
     plt.legend()
     plt.savefig(os.path.join(results_dir, 'training_loss_over_time.png'))
-    plt.show()
+    #plt.show()
 
     # Plot total rewards per episode with moving average
     plt.figure(figsize=(12, 6))
@@ -203,60 +319,10 @@ def main():
     plt.title('Total Rewards Per Episode')
     plt.legend()
     plt.savefig(os.path.join(results_dir, 'total_rewards_per_episode.png'))
-    plt.show()
+    #plt.show()
 
-    # Combined Cash Levels Plot
-    plt.figure(figsize=(12, 6))
-    for i in episodes_to_plot:
-        plt.plot(cash_per_episode[i], label=f'Episode {i + 1}')
-    plt.xlabel('Step')
-    plt.ylabel('Cash')
-    plt.title('Cash Levels Over Time - Episodes 1, 5, 10')
-    plt.legend()
-    plt.savefig(os.path.join(results_dir, 'cash_levels_combined.png'))
-    plt.show()
-
-    # Combined Inventory Levels Plot
-    plt.figure(figsize=(12, 6))
-    for i in episodes_to_plot:
-        plt.plot(inventory_per_episode[i], label=f'Episode {i + 1}')
-    plt.xlabel('Step')
-    plt.ylabel('Inventory')
-    plt.title('Inventory Levels Over Time - Episodes 1, 5, 10')
-    plt.legend()
-    plt.savefig(os.path.join(results_dir, 'inventory_levels_combined.png'))
-    plt.show()
-
-   # Combined Cumulative Rewards Plot
-    plt.figure(figsize=(12, 6))
-    for i in episodes_to_plot:
-        cumulative_reward = np.cumsum(rewards_per_episode[i])
-        plt.plot(cumulative_reward, label=f'Episode {i + 1}')
-    plt.xlabel('Step')
-    plt.ylabel('Cumulative Reward')
-    plt.title('Cumulative Reward Over Time - Episodes 1, 5, 10')
-    plt.legend()
-    plt.savefig(os.path.join(results_dir, 'cumulative_reward_combined.png'))
-    plt.show()
-
-    # Combined Step Rewards Plot
-    plt.figure(figsize=(12, 6))
-    for i in episodes_to_plot:
-        plt.plot(range(1, len(rewards_per_episode[i]) + 1), rewards_per_episode[i], label=f'Episode {i + 1}')
-    plt.xlabel('Step')
-    plt.ylabel('Step Reward')
-    plt.title('Step Rewards Over Time - Episodes 1, 5, 10')
-    plt.legend()
-    plt.savefig(os.path.join(results_dir, 'step_rewards_combined.png'))
-    plt.show()
-
-    # Evaluate the agent on validation data
-    val_total_reward = evaluate_agent(agent, env, val_data, "Validation", results_dir)
-    print(f"Validation Total Reward: {val_total_reward}")
-
-    # Evaluate the agent on test data
-    test_total_reward = evaluate_agent(agent, env, test_data, "Test", results_dir)
-    print(f"Test Total Reward: {test_total_reward}")
+    # Evaluate the agent on validation and test data
+    evaluate_on_validation_test(agent, env, val_data, test_data, results_dir)
 
 if __name__ == "__main__":
     main()

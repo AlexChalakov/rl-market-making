@@ -6,12 +6,13 @@ from gym import spaces
 # The ContinuousMarketEnv class extends the BaseMarketEnv class and defines a continuous action space for buying and selling assets.
 ## This code simulates a market making environment with a focus on inventory management and execution quality.
 class ContinuousMarketEnv(BaseMarketEnv):
-    def __init__(self, data, reward_type='default'):
+    def __init__(self, data, data_type='crypto', reward_type='default'):
         super(ContinuousMarketEnv, self).__init__(data)
         # Adjust action space to include trade size (units) in addition to price adjustments
         self.action_space = spaces.Box(low=np.array([-1, -10]), high=np.array([1, 10]), dtype=np.float32)
+        self.data_type = data_type
         self.inventory = 0 # Inventory for the agent
-        self.cash = 5000 # Cash for the agent
+        self.cash = 10000 # Cash for the agent
         self.trades = [] # List to store executed trades
         self.reward_type = reward_type
         self.past_pnls = []  # To store past PnL values for risk metrics
@@ -24,7 +25,7 @@ class ContinuousMarketEnv(BaseMarketEnv):
     def reset(self):
         self.current_step = np.random.randint(0, 10)  # Start from a random step within the first 10 steps
         self.inventory = 0
-        self.cash = 5000 + np.random.uniform(-1000, 1000)  # Add a random variation to the cash
+        self.cash = 9000 + np.random.uniform(-1000, 1000)  # Add a random variation to the cash
         self.trades = []
         self.past_pnls = []
         self.trade_flows = []
@@ -37,22 +38,31 @@ class ContinuousMarketEnv(BaseMarketEnv):
     # if the ask adjustment is enough to sell at the best ask price, it sells.
     def step(self, action):
         bid_adjustment, trade_size = action
-        # Main data columns: 'Bid Price 0', 'Ask Price 0', 'Bid Size 0', 'Ask Size 0'
-        best_bid = self.data.iloc[self.current_step]['Bid Price 0']
-        best_ask = self.data.iloc[self.current_step]['Ask Price 0']
-        bid_size = self.data.iloc[self.current_step]['Bid Size 0']
-        ask_size = self.data.iloc[self.current_step]['Ask Size 0']
 
-        # Feature engineering columns
-        midpoint = self.data.iloc[self.current_step]['Midpoint']
-        spread = self.data.iloc[self.current_step]['Spread']
-        vwap = self.data.iloc[self.current_step]['VWAP']
-        osi = self.data.iloc[self.current_step]['OrderSizeImbalance']
-        rv = self.data.iloc[self.current_step]['RelativeVolume']
+        if self.data_type == 'crypto':
+            # Main data columns: 'Bid Price 0', 'Ask Price 0', 'Bid Size 0', 'Ask Size 0'
+            # Crypto data uses precomputed spread and midpoint
+            best_bid = self.data.iloc[self.current_step]['Bid Price 0']
+            best_ask = self.data.iloc[self.current_step]['Ask Price 0']
+            bid_size = self.data.iloc[self.current_step]['Bid Size 0']
+            ask_size = self.data.iloc[self.current_step]['Ask Size 0']
+            midpoint = self.data.iloc[self.current_step]['Midpoint']
+            spread = self.data.iloc[self.current_step]['Spread']
+            vwap = self.data.iloc[self.current_step]['VWAP']
+            osi = self.data.iloc[self.current_step]['OrderSizeImbalance']
+            rv = self.data.iloc[self.current_step]['RelativeVolume']
+        else:  # 'lobster'
+            # LOBSTER data does not have precomputed spread and midpoint
+            best_bid = self.data.iloc[self.current_step]['Bid Price 1']
+            best_ask = self.data.iloc[self.current_step]['Ask Price 1']
+            bid_size = self.data.iloc[self.current_step]['Bid Size 1']
+            ask_size = self.data.iloc[self.current_step]['Ask Size 1']
+            spread = best_ask - best_bid
+            midpoint = (best_bid + best_ask) / 2
 
         # Limit trade size based on available liquidity 
-        max_trade_size = min(ask_size, bid_size)
-        trade_size = np.clip(trade_size * max_trade_size, -ask_size, bid_size)
+        #max_trade_size = min(ask_size, bid_size)
+        #trade_size = np.clip(trade_size * max_trade_size, -ask_size, bid_size)
         #trade_size = np.clip(trade_size * max_trade_size * (self.cash / (self.cash + abs(self.inventory))), -ask_size, bid_size)
 
         # Enhanced action-to-order mapping logic
@@ -84,7 +94,7 @@ class ContinuousMarketEnv(BaseMarketEnv):
 
         done = self.advance_step()
         # Calculate reward based on the action taken
-        reward = self.calculate_reward(action_taken, midpoint, spread, vwap, osi, rv)
+        reward = self.calculate_reward(action_taken, midpoint, spread)
 
         state = self.get_current_state()
         
@@ -95,18 +105,21 @@ class ContinuousMarketEnv(BaseMarketEnv):
         return state, reward, done, {}
 
     # Designed to balance the inventory and execution quality.
-    def calculate_reward(self, action_taken, midpoint, spread, vwap, osi, rv):
+    def calculate_reward(self, action_taken, midpoint, spread):
         # Calculate PnL based on current cash and inventory value
-        pnl = self.cash + self.inventory * self.data.iloc[self.current_step]['Bid Price 0']
-        
-        # Smoothing PnL changes over the last few steps (to avoid sharp fluctuations)
-        if len(self.past_pnls) > 10:
-            smoothed_pnl = np.mean(self.past_pnls[-10:])
+        if self.data_type == 'crypto':
+            pnl = self.cash + self.inventory * self.data.iloc[self.current_step]['Bid Price 0']
         else:
-            smoothed_pnl = pnl
+            pnl = self.cash + self.inventory * self.data.iloc[self.current_step]['Bid Price 1']
+                
+        # Smoothing PnL changes over the last few steps (to avoid sharp fluctuations)
+        #if len(self.past_pnls) > 10:
+            #smoothed_pnl = np.mean(self.past_pnls[-10:])
+        #else:
+            #smoothed_pnl = pnl
 
         if self.reward_type == 'default':
-            reward = self._default_reward(smoothed_pnl, action_taken, midpoint, spread, vwap, osi, rv)
+            reward = self._default_reward(pnl, action_taken, midpoint, spread)
         elif self.reward_type == 'asymmetrical':
             reward = self._asymmetrical_reward(pnl, action_taken)
         elif self.reward_type == 'realized_pnl':
@@ -116,22 +129,23 @@ class ContinuousMarketEnv(BaseMarketEnv):
         elif self.reward_type == 'spread_capture':
             reward = self._spread_capture_reward(pnl, action_taken)
         else:
-            reward = self._default_reward(pnl, action_taken, midpoint, spread, vwap, osi, rv)
+            reward = self._default_reward(pnl, action_taken, spread)
 
         return reward
 
     # The _default_reward method calculates the reward based on the Profit and Loss (PnL) and the action taken.
     # This is the main reward function used in the environment.
-    def _default_reward(self, pnl, action_taken, midpoint, spread, vwap, osi, rv):
+    def _default_reward(self, pnl, action_taken, midpoint, spread):
         # Reward for making a trade
-        trade_reward = 1.5 if action_taken else 0  # Encourages action, slightly reduced
+        trade_reward = 1.0 if action_taken else 0  # Encourages action, slightly reduced
 
         # Inventory penalty to encourage balanced inventory
         target_inventory = 2  # Adjusted target inventory for simplicity
-        dynamic_inventory_penalty = 0.05 if abs(self.inventory - target_inventory) > 2 else 0.025  # Further reduced
+        dynamic_inventory_penalty = 0.1 if abs(self.inventory - target_inventory) > 2 else 0.05  # Further reduced
         inventory_penalty = max(0, abs(self.inventory - target_inventory)) * dynamic_inventory_penalty
 
         # Execution quality reward/penalty based on how close the executed price is to the midpoint
+        #midpoint = (self.data.iloc[self.current_step]['Bid Price 1'] + self.data.iloc[self.current_step]['Ask Price 1']) / 2
         execution_quality_reward = 0
         if self.trades:
             # Get the last trade details
@@ -143,7 +157,7 @@ class ContinuousMarketEnv(BaseMarketEnv):
             if abs(executed_price - midpoint) > 0.5 * spread:
                 execution_quality_reward = -abs(executed_price - midpoint) * 0.1  # Reduced further
             else:
-                execution_quality_reward = -abs(executed_price - midpoint) * 0.03  # Reduced further
+                execution_quality_reward = -abs(executed_price - midpoint) * 0.05  # Reduced further
 
         # Spread capture reward to encourage effective spread capture
         spread_capture_reward = 0
@@ -151,16 +165,18 @@ class ContinuousMarketEnv(BaseMarketEnv):
             if trade_type == "BUY":
                 spread_capture_reward = (midpoint - executed_price) * 0.05  # Reduced
             elif trade_type == "SELL":
-                spread_capture_reward = (executed_price - midpoint) * 0.3  # Reduced
+                spread_capture_reward = (executed_price - midpoint) * 0.05  # Reduced
 
         # Add PnL as a small baseline reward
-        pnl_baseline_reward = pnl * 0.005  # Reduced to lower volatility
+        #pnl_baseline_reward = pnl * 0.005  # Reduced to lower volatility
+
+        pnl_change_reward = (pnl - self.past_pnls[-1]) * 0.01 if len(self.past_pnls) > 1 else 0
 
         # Smoothed PnL change reward (reduces volatility)
-        if len(self.past_pnls) > 1:
-            pnl_change_reward = (pnl - self.past_pnls[-1]) * 0.005  # Smaller impact to smooth out fluctuations
-        else:
-            pnl_change_reward = 0
+        #if len(self.past_pnls) > 1:
+            #pnl_change_reward = (pnl - self.past_pnls[-1]) * 0.005  # Smaller impact to smooth out fluctuations
+        #else:
+            #pnl_change_reward = 0
 
         # Sharpe Ratio Penalty (Risk-Adjusted Reward)
         sharpe_ratio = self.calculate_sharpe_ratio()
@@ -173,7 +189,7 @@ class ContinuousMarketEnv(BaseMarketEnv):
 
         # Total reward is the sum of the components
         reward = (
-            pnl_baseline_reward
+            pnl
             + trade_reward
             - inventory_penalty
             + execution_quality_reward
@@ -281,3 +297,9 @@ class ContinuousMarketEnv(BaseMarketEnv):
         total_price = sum(trade[1] * trade[2] for trade in self.trades)
         total_quantity = sum(trade[2] for trade in self.trades)
         return total_price / total_quantity if total_quantity else 0
+    
+    def get_best_bid(self):
+        if self.data_type == 'crypto':
+            return self.data.iloc[self.current_step]['Bid Price 0']
+        else:
+            return self.data.iloc[self.current_step]['Bid Price 1']
