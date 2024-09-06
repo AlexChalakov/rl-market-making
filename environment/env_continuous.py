@@ -61,14 +61,14 @@ class ContinuousMarketEnv(BaseMarketEnv):
             midpoint = (best_bid + best_ask) / 2
 
         # Limit trade size based on available liquidity 
-        #max_trade_size = min(ask_size, bid_size)
-        #trade_size = np.clip(trade_size * max_trade_size, -ask_size, bid_size)
+        max_trade_size = min(ask_size, bid_size)
+        trade_size = np.clip(trade_size * max_trade_size, -ask_size, bid_size)
         #trade_size = np.clip(trade_size * max_trade_size * (self.cash / (self.cash + abs(self.inventory))), -ask_size, bid_size)
 
         # Enhanced action-to-order mapping logic
         bid_adjustment = bid_adjustment * spread * 1.5
         executed_bid = best_bid + bid_adjustment
-        executed_ask = best_ask - bid_adjustment  # Symmetrical adjustment
+        executed_ask = best_ask - bid_adjustment
 
         action_taken = False
 
@@ -167,9 +167,6 @@ class ContinuousMarketEnv(BaseMarketEnv):
             elif trade_type == "SELL":
                 spread_capture_reward = (executed_price - midpoint) * 0.05  # Reduced
 
-        # Add PnL as a small baseline reward
-        #pnl_baseline_reward = pnl * 0.005  # Reduced to lower volatility
-
         pnl_change_reward = (pnl - self.past_pnls[-1]) * 0.01 if len(self.past_pnls) > 1 else 0
 
         # Smoothed PnL change reward (reduces volatility)
@@ -201,16 +198,17 @@ class ContinuousMarketEnv(BaseMarketEnv):
         # Print the reward components if an action was taken
         if action_taken:
             print(f"Action Taken: {'BUY' if trade_type == 'BUY' else 'SELL'}")
+            print(f"PnL: {pnl}")
             print(f"Trade Reward: {trade_reward}")
             print(f"Inventory Penalty: {inventory_penalty}")
             print(f"Execution Quality Reward: {execution_quality_reward}")
             print(f"Spread Capture Reward: {spread_capture_reward}")
             print(f"PnL Change Reward: {pnl_change_reward}")
-            print(f"PnL Baseline Reward: {pnl_baseline_reward}")
             print(f"Total Step Reward: {reward}")
         """
-
-        reward *= reward_adjustment  # Adjust reward based on Sharpe Ratio
+        
+        # Adjust reward based on Sharpe Ratio
+        reward *= reward_adjustment  
         
         return reward
     

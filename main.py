@@ -141,8 +141,7 @@ def evaluate_on_validation_test(agent, env, val_data, test_data, results_dir):
 # Main function to train the agent
 def main():
     # Set random seed for reproducibility
-    #1725487641
-    set_seed(1724232630)  # no fixed seed; use current time
+    set_seed(None)  # no fixed seed; use current time
 
     # Prompt user for dataset selection
     print("Select dataset to load:")
@@ -151,7 +150,7 @@ def main():
     data_choice = input("Enter 0 for LOBSTER or 1 for Crypto: ")
 
     processed_data = None
-    data_type = "crypto" # by default
+    data_type = "crypto"
 
     # Load the selected dataset
     if data_choice == "0":

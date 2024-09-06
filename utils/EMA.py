@@ -83,7 +83,7 @@ def apply_ema_all_data(
     smoothed_data = []
 
     if isinstance(ema, ExponentialMovingAverage):
-        for value in data.values:  # Apply EMA to the series values
+        for value in data.values:  
             ema.step(value=value)
             smoothed_data.append(ema.value)
         return pd.Series(smoothed_data, index=data.index, name=f'{data.name}_EMA')

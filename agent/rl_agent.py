@@ -41,7 +41,7 @@ class PPOAgent:
         with tf.GradientTape() as tape:
             # Predict action probabilities and state values
             action_pred = self.policy_network(state)
-            #print(f"Predicted action before update: {action_pred.numpy()}")  # Debugging line
+            #print(f"Predicted action before update: {action_pred.numpy()}")
             value_pred = self.value_network(state)
             next_value_pred = self.value_network(next_state)
 
@@ -73,7 +73,7 @@ class PPOAgent:
         clipped_grads = [tf.clip_by_value(grad, -1.0, 1.0) if grad is not None else grad for grad in grads]
         self.optimizer.apply_gradients(zip(clipped_grads, self.policy_network.trainable_variables + self.value_network.trainable_variables))
 
-        #print(f"Predicted action after update: {action_pred.numpy()}")  # Debugging line
+        #print(f"Predicted action after update: {action_pred.numpy()}")
 
     # The save method saves the policy and value networks to the specified paths.
     def save(self, policy_path, value_path):
