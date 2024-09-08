@@ -165,7 +165,7 @@ def main():
         processed_data = preprocess_lobster_data(lob_data)
 
         data_type = "lobster"
-        results_dir = "results_lobster"
+        results_dir = "results_lobster2"
         
     elif data_choice == "1":
         # *** Default Option: Load Preprocessed Crypto Limit Order Book (LOB) Data ***
@@ -178,7 +178,7 @@ def main():
         processed_data = pd.read_csv(data_file)
         
         data_type = "crypto"
-        results_dir = "results_crypto"
+        results_dir = "results_crypto2"
         
     else:
         print("Invalid selection. Please enter 0 for LOBSTER or 1 for Crypto.")
@@ -188,6 +188,9 @@ def main():
     if not os.path.exists(results_dir):
         os.makedirs(results_dir)
 
+    metrics_file_path = os.path.join(results_dir, "metrics_log.csv")
+
+    # TODO try to run an iteration without this split
     # Split the data into training, validation, and testing sets
     train_data, val_data, test_data = split_data(processed_data)
 
@@ -251,6 +254,10 @@ def main():
         cash_per_episode.append(episode_cash)
         rewards_per_episode.append(episode_rewards)
         best_bid_per_episode.append(episode_best_bids)
+
+        # Save metrics at the end of the episode
+        env.save_metrics(episode_num=episode+1, file_path=metrics_file_path)
+
         print(f"Episode {episode + 1}/{num_episodes} completed with total reward: {total_reward}")
 
         # Plot Step Rewards Over Time for the current episode

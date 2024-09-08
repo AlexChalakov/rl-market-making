@@ -1,4 +1,6 @@
+import os
 import numpy as np
+import pandas as pd
 from environment.base_env import BaseMarketEnv
 from gym import spaces
 # In a continuous environment, the actions the agent can take are not limited to a finite set but can take any value within a specified range. 
@@ -18,7 +20,20 @@ class ContinuousMarketEnv(BaseMarketEnv):
         self.past_pnls = []  # To store past PnL values for risk metrics
         self.trade_flows = []  # To store order flow imbalance data
         self.current_step = 0
-        self.action_count = 0
+        # Same initialization, but we will track more metrics
+        self.metrics = {
+            'total_pnl': [],  # Track total profit and loss
+            'sharpe_ratio': [],  # Track Sharpe ratio
+            'total_trades': 0,  # Count the number of trades executed
+            'buy_trades': 0,  # Track buy trades
+            'sell_trades': 0,  # Track sell trades
+            'inventory_levels': [],  # Track inventory levels over time
+            'execution_quality': [],  # Deviation from midpoint
+            'cumulative_reward': 0,  # Cumulative rewards per episode
+            'map': 0,  # Mean Average Pricing
+            'ofi': 0,  # Order Flow Imbalance
+            'rsi': 0  # Relative Strength Index
+        }
 
     # The reset method initializes the environment at the beginning of an episode.
     # It resets the current step, inventory, cash, and trade history.
@@ -29,7 +44,21 @@ class ContinuousMarketEnv(BaseMarketEnv):
         self.trades = []
         self.past_pnls = []
         self.trade_flows = []
-        self.action_count = 0
+        # Reset metrics at the beginning of the episode
+        self.metrics = {
+            'total_pnl': [],
+            'sharpe_ratio': [],
+            'total_trades': 0,
+            'buy_trades': 0,
+            'sell_trades': 0,
+            'inventory_levels': [],
+            'execution_quality': [],
+            'cumulative_reward': 0,
+            'map': 0,
+            'ofi': 0,
+            'rsi': 0
+        }
+
         return self.data.iloc[self.current_step].values
 
     # The step method takes an action as input and returns the next state, reward, done flag, and additional information.
@@ -57,6 +86,8 @@ class ContinuousMarketEnv(BaseMarketEnv):
             best_ask = self.data.iloc[self.current_step]['Ask Price 1']
             bid_size = self.data.iloc[self.current_step]['Bid Size 1']
             ask_size = self.data.iloc[self.current_step]['Ask Size 1']
+            osi = self.data.iloc[self.current_step]['osi']
+            rv = self.data.iloc[self.current_step]['rv']
             spread = best_ask - best_bid
             midpoint = (best_bid + best_ask) / 2
 
@@ -79,6 +110,7 @@ class ContinuousMarketEnv(BaseMarketEnv):
                 self.cash -= executed_bid * trade_size
                 self.trades.append(("BUY", executed_bid, trade_size))
                 action_taken = True
+                self.metrics['buy_trades'] += 1
                 print(f"BUY: {trade_size} units at {executed_bid}, Inventory: {self.inventory}, Cash: {self.cash}")
 
             # Sell action (if inventory is sufficient)
@@ -87,21 +119,35 @@ class ContinuousMarketEnv(BaseMarketEnv):
                 self.cash += abs(trade_size) * executed_ask
                 self.trades.append(("SELL", executed_ask, abs(trade_size)))
                 action_taken = True
+                self.metrics['sell_trades'] += 1
                 print(f"SELL: {abs(trade_size)} units at {executed_ask}, Inventory: {self.inventory}, Cash: {self.cash}")
 
             # Increment the action counter when an action is taken
-            self.action_count += 1
+            self.metrics['total_trades'] += 1
 
         done = self.advance_step()
         # Calculate reward based on the action taken
         reward = self.calculate_reward(action_taken, midpoint, spread)
-
-        state = self.get_current_state()
         
         # Store PnL and trade flow data
-        self.past_pnls.append(self.cash + self.inventory * best_bid)
+        pnl = self.cash + self.inventory * best_bid
+        self.past_pnls.append(pnl)
         self.trade_flows.append(self.cash)
+        self.metrics['total_pnl'].append(pnl)
+        self.metrics['inventory_levels'].append(self.inventory)
+        self.metrics['cumulative_reward'] += reward
+        sharpe_ratio = self.calculate_sharpe_ratio()
+        self.metrics['sharpe_ratio'].append(sharpe_ratio)
+        if action_taken:
+            last_trade = self.trades[-1]
+            trade_type, executed_price, trade_size = last_trade
+            execution_quality = abs(executed_price - midpoint)
+            self.metrics['execution_quality'].append(execution_quality)
+        self.metrics['ofi'] = self.order_flow_imbalance()
+        self.metrics['map'] = self.mean_average_pricing()
+        self.metrics['rsi'] = self.rsi()
 
+        state = self.get_current_state()
         return state, reward, done, {}
 
     # Designed to balance the inventory and execution quality.
@@ -206,22 +252,11 @@ class ContinuousMarketEnv(BaseMarketEnv):
             print(f"PnL Change Reward: {pnl_change_reward}")
             print(f"Total Step Reward: {reward}")
         """
-        
+
         # Adjust reward based on Sharpe Ratio
         reward *= reward_adjustment  
         
         return reward
-    
-    # The calculate_sharpe_ratio method calculates the Sharpe Ratio as a risk-adjusted performance metric.
-    def calculate_sharpe_ratio(self):
-        # Calculate Sharpe Ratio as a risk-adjusted performance metric
-        returns = np.diff(self.past_pnls)  # Daily returns
-        if len(returns) < 2:
-            return 0
-        avg_return = np.mean(returns)
-        return_volatility = np.std(returns)
-        sharpe_ratio = avg_return / return_volatility if return_volatility != 0 else 0
-        return sharpe_ratio
 
     # The _asymmetrical_reward method calculates the reward based on the Profit and Loss (PnL) and the action taken.
     def _asymmetrical_reward(self, pnl, action_taken):
@@ -256,18 +291,19 @@ class ContinuousMarketEnv(BaseMarketEnv):
 
         return reward
 
-    # The _spread_capture_reward method focuses on capturing the spread between the bid and ask prices.
-    def implementation_shortfall(self):
-        # Implementation Shortfall (IS) calculation
-        if not self.trades:
+    # The calculate_sharpe_ratio method calculates the Sharpe Ratio as a risk-adjusted performance metric.
+    def calculate_sharpe_ratio(self):
+        # Calculate Sharpe Ratio as a risk-adjusted performance metric
+        returns = np.diff(self.past_pnls)  # Daily returns
+        if len(returns) < 2:
             return 0
-        mid_price = (self.data.iloc[self.current_step]['Bid Price 1'] + self.data.iloc[self.current_step]['Ask Price 1']) / 2
-        total_is = sum(abs(trade[1] - mid_price) * trade[2] for trade in self.trades)
-        return total_is / len(self.trades) if self.trades else 0
-
+        avg_return = np.mean(returns)
+        return_volatility = np.std(returns)
+        sharpe_ratio = avg_return / return_volatility if return_volatility != 0 else 0
+        return sharpe_ratio
+    
     # The order_flow_imbalance method calculates the Order Flow Imbalance (OFI) based on the trade flows.
     def order_flow_imbalance(self):
-        # Order Flow Imbalance (TFI) calculation
         if not self.trade_flows:
             return 0
         total_buy = sum(flow for flow in self.trade_flows if flow > 0)
@@ -276,7 +312,6 @@ class ContinuousMarketEnv(BaseMarketEnv):
     
     # The rsi method calculates the Relative Strength Index (RSI) based on the executed sell prices.
     def rsi(self):
-        # RSI calculation (simple version)
         prices = [trade[1] for trade in self.trades if trade[0] == "SELL"]
         if len(prices) < 14:
             return 50  # Default RSI value
@@ -289,15 +324,38 @@ class ContinuousMarketEnv(BaseMarketEnv):
 
     # The mean_average_pricing method calculates the Mean Average Pricing (MAP) based on the executed trades.
     def mean_average_pricing(self):
-        # Mean Average Pricing (MAP) calculation
         if not self.trades:
             return 0
         total_price = sum(trade[1] * trade[2] for trade in self.trades)
         total_quantity = sum(trade[2] for trade in self.trades)
         return total_price / total_quantity if total_quantity else 0
     
+    # Get best bid field
     def get_best_bid(self):
         if self.data_type == 'crypto':
             return self.data.iloc[self.current_step]['Bid Price 0']
         else:
             return self.data.iloc[self.current_step]['Bid Price 1']
+        
+    def save_metrics(self, episode_num, file_path="metrics_log.csv"):
+        # Convert metrics to a DataFrame
+        metrics_df = pd.DataFrame({
+            'Episode': [episode_num],
+            'Total PnL': [sum(self.metrics['total_pnl'])],
+            'Average Sharpe Ratio': [np.mean(self.metrics['sharpe_ratio']) if self.metrics['sharpe_ratio'] else 0],
+            'Total Trades': [self.metrics['total_trades']],
+            'Buy Trades': [self.metrics['buy_trades']],
+            'Sell Trades': [self.metrics['sell_trades']],
+            'Average Inventory Level': [np.mean(self.metrics['inventory_levels']) if self.metrics['inventory_levels'] else 0],
+            'Execution Quality (Avg)': [np.mean(self.metrics['execution_quality']) if self.metrics['execution_quality'] else 0],
+            'Cumulative Reward': [self.metrics['cumulative_reward']],
+            'MAP': [self.metrics['map']],
+            'OFI': [self.metrics['ofi']],
+            'RSI': [self.metrics['rsi']]
+        })
+        
+        # Append the DataFrame to the CSV file, or create the file if it doesn't exist
+        if not os.path.isfile(file_path):
+            metrics_df.to_csv(file_path, mode='w', header=True, index=False)
+        else:
+            metrics_df.to_csv(file_path, mode='a', header=False, index=False)
