@@ -10,6 +10,144 @@ from gymnasium.wrappers import TimeLimit
 from agent.rl_agent import PPOAgent, TWAPBaseline
 from network.network import create_cnn_attention_policy_network, create_cnn_attention_value_network
 from utils.utils import load_lobster_data, preprocess_lobster_data, save_preprocessed_data, split_data, augment_data
+from sb3_contrib import RecurrentPPO
+import optuna
+
+data_file = os.path.join('data', 'data_pipeline', 'processed_crypto_lob_data.csv')
+if not os.path.exists(data_file):
+    raise FileNotFoundError(f"The file {data_file} does not exist. Please run the data pipeline first.")
+
+print("Loading preprocessed crypto order book data...")
+processed_data = pd.read_csv(data_file)
+processed_data = processed_data.drop(columns=['Time','VWAP', 'Spread', 'OrderSizeImbalance', 'RelativeVolume'])
+# Split the data into training, validation, and testing sets
+train_data, val_data, test_data = split_data(processed_data)
+
+# Optionally apply data augmentation to the training data
+train_data = augment_data(train_data)
+env = ContinuousMarketEnv(train_data)
+env = TimeLimit(env, max_episode_steps=500)
+
+# def hyperparameter_tuning(trial):
+# learning_rate = trial.suggest_loguniform('learning_rate', 1e-6, 1e-4)
+# gamma = trial.suggest_uniform('gamma', 0.9, 0.999)
+# clip_range = trial.suggest_uniform('clip_range', 0.1, 0.3)
+# n_epochs = trial.suggest_int('n_epochs', 3, 10)
+# batch_size = trial.suggest_categorical('batch_size', [64, 128, 256])
+# ent_coef = trial.suggest_loguniform('ent_coef', 1e-8, 1e-2)
+# n_steps = trial.suggest_int('n_steps', 512, 2048, step=512)
+
+# # Create the model with sampled hyperparameters
+# model = RecurrentPPO(
+#     "MlpLstmPolicy", 
+#     env, 
+#     verbose=0,
+#     learning_rate=learning_rate,
+#     n_steps=n_steps,
+#     gamma=gamma,
+#     ent_coef=ent_coef,
+#     batch_size=batch_size,
+#     clip_range=clip_range,
+#     tensorboard_log="logs/"
+# )
+
+# # Use an evaluation callback to track performance
+# eval_env = ContinuousMarketEnv(val_data)
+# eval_callback = EvalCallback(
+#     eval_env,
+#     best_model_save_path='./logs/best_model',
+#     log_path='./logs/results',
+#     eval_freq=10000,
+#     deterministic=True,
+#     render=False
+# )
+
+# # Train the model
+# model.learn(total_timesteps=500000, callback=eval_callback)
+
+# # Evaluate the model's performance and return the mean reward
+# mean_reward, _ = evaluate_policy(model, eval_env, n_eval_episodes=10)
+
+# return mean_reward
+
+# study = optuna.create_study(direction='maximize')
+# study.optimize(hyperparameter_tuning, n_trials=50)
+
+# print("Best hyperparameters found:")
+# print(study.best_trial.params)
+results_dir = "results_crypto"
+    # Create a new directory called "results" if it doesn't exist
+if not os.path.exists(results_dir):
+    os.makedirs(results_dir)
+
+model = RecurrentPPO("MlpLstmPolicy", env, verbose=0, learning_rate=lambda t :t*1e-4, stats_window_size=1, gamma=0.99, n_steps= 1024, clip_range=0.2, n_epochs=4
+                     , batch_size=256, ent_coef=0.01, tensorboard_log="logs/")
+model.learn(20000000)
+
+model.save("ppo_recurrent")
+del model # remove to demonstrate saving and loading
+model = RecurrentPPO.load("ppo_recurrent")
+
+# Lists to store metrics during the episode
+pnl_list = []
+inventory_list = []
+cash_list = []
+implementation_shortfall_list = []
+half_spread_list = []
+spread_capture_list = []
+ofi_list = []
+mdd_list = []
+map_list = []
+sharpe_list = []
+
+obs = env.reset()
+# cell and hidden state of the LSTM
+lstm_states = None
+num_envs = 1
+# Episode start signals are used to reset the lstm states
+episode_starts = np.ones((num_envs,), dtype=bool)
+while True:
+    action, lstm_states = model.predict(obs, state=lstm_states, episode_start=episode_starts, deterministic=True)
+    obs, rewards, dones, info = env.step(action)
+    # Accumulate metrics
+    pnl_list.append(info['pnl'])
+    inventory_list.append(info['inventory'])
+    cash_list.append(info['cash'])
+    implementation_shortfall_list.append(info['implementation_shortfall'])
+    half_spread_list.append(info['half_spread_percentage'])
+    spread_capture_list.append(info['spread_capture'])
+    ofi_list.append(info['ofi'])
+    mdd_list.append(info['mdd'])
+    map_list.append(info['map'])
+    sharpe_list.append(info['sharpe_ratio'])
+    
+    episode_starts = dones
+    env.render("human")
+    if dones:
+        break
+
+# Function to plot a list of metrics
+def plot_metrics(metric_list, metric_name):
+    plt.figure(figsize=(10, 6))
+    plt.plot(metric_list, label=metric_name)
+    plt.title(f'{metric_name} over time')
+    plt.xlabel('Steps')
+    plt.ylabel(metric_name)
+    plt.legend()
+    plt.grid(True)
+    plt.savefig(os.path.join(results_dir, f'{metric_name.lower().replace(" ", "_")}.png'))
+
+# Plot all metrics
+plot_metrics(pnl_list, 'PnL')
+plot_metrics(inventory_list, 'Inventory')
+plot_metrics(cash_list, 'Cash')
+plot_metrics(implementation_shortfall_list, 'Implementation Shortfall')
+plot_metrics(half_spread_list, 'Percentage of Half-Spread')
+plot_metrics(spread_capture_list, 'Spread Capture')
+plot_metrics(ofi_list, 'Order Flow Imbalance')
+plot_metrics(mdd_list, 'Maximum Drawdown')
+plot_metrics(map_list, 'Mean Absolute Position')
+plot_metrics(sharpe_list, 'Sharpe Ratio')   
 
 # Set fixed seed for reproducibility
 def set_seed(seed):
@@ -32,7 +170,7 @@ def evaluate_agent(agent, env, data, title, results_dir):
     step = 0
     while not done:
         action = agent.act(state)
-        next_state, reward, done, _ = env.step(action)
+        next_state, reward, done, _ ,_= env.step(action)
         state = next_state
 
         total_reward += reward
@@ -86,11 +224,12 @@ def run_twap_baseline(env, twap_model):
 
     done = False
     while not done:
-        trade_size = twap_model.act()  # TWAP decides the trade size for this step
+        trade_size = twap_model.act(state)  # TWAP decides the trade size for this step
         action = np.array([0, trade_size])  # Assuming 0 price adjustment and TWAP decides trade size
-        state, reward, done, _ = env.step(action)
+        state, reward, done, _ , _= env.step(action)
 
     print("TWAP Baseline Run Complete")
+    
 def main():
     # Set random seed for reproducibility
     # good seed to test: 1724234196 with lobster data
@@ -106,6 +245,8 @@ def main():
 
     print("Loading preprocessed crypto order book data...")
     processed_data = pd.read_csv(data_file)
+    # remove some columns that are not needed
+    processed_data = processed_data.drop(columns=['Time','VWAP', 'Spread', 'OrderSizeImbalance', 'RelativeVolume'])
 
     # *** Alternative Option: Load and Preprocess LOBSTER Data ***
     # Uncomment the following lines to use the LOBSTER data
@@ -163,7 +304,7 @@ def main():
         os.makedirs(results_dir)
 
     # Training loop
-    num_episodes = 10  # Adjust as needed
+    num_episodes = 50  # Adjust as needed
     for episode in range(num_episodes):
         state = env.reset()
         done = False
@@ -193,6 +334,10 @@ def main():
         long_term_reward = []
         step = 0
         print(f"Starting episode {episode + 1}/{num_episodes}")
+        # twap baseline
+        run_twap_baseline(env, twap_agent)
+        
+        
         while not done:
             action = agent.act(state)
             next_state, reward, done, _, _ = env.step(action)
@@ -255,7 +400,11 @@ def main():
 
     # Combined plots for episodes 1, 5, and 10
     episodes_to_plot = [0, 4, 9]  # Indexing starts at 0, so 1st, 5th, and 10th episodes are 0, 4, 9
-
+    # plot the result of TWAP baseline
+    # Evaluate the agent on the given data
+    twap_total_reward = evaluate_agent(twap_agent, env, train_data, "TWAP Baseline", results_dir)
+    print(f"TWAP Baseline Total Reward: {twap_total_reward}")
+    
     # Save the trained agent
     print("Saving the trained agent...")
     agent.save(os.path.join(results_dir, 'saved_policy_model.h5'), os.path.join(results_dir, 'saved_value_model.h5'))
@@ -522,5 +671,5 @@ def main():
     test_total_reward = evaluate_agent(agent, env, test_data, "Test", results_dir)
     print(f"Test Total Reward: {test_total_reward}")
 
-if __name__ == "__main__":
-    main()
+# if __name__ == "__main__":
+#     main()

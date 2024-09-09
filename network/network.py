@@ -32,7 +32,7 @@ def create_cnn_attention_policy_network(input_shape):
     model.add(layers.Dropout(0.2))
     
     # Output Layer
-    model.add(layers.Dense(2, activation='tanh', kernel_initializer='he_uniform'))  # Output layer for actions
+    model.add(layers.Dense(2, activation='tanh', kernel_initializer='GlorotUniform'))  # Output layer for actions
     
     return model
 

@@ -108,18 +108,6 @@ class DataPipeline:
         # Calculate Midpoint from the best bid and ask prices
         data['Midpoint'] = (data['BidPrice_0'] + data['AskPrice_0']) / 2
 
-        # Calculate the bid-ask spread
-        data['Spread'] = data['AskPrice_0'] - data['BidPrice_0']
-
-        # Calculate Order Size Imbalance (OSI)
-        data['OrderSizeImbalance'] = (data['BidVolume_0'] - data['AskVolume_0']) / (data['BidVolume_0'] + data['AskVolume_0'])
-
-        # Calculate Volume-Weighted Average Price (VWAP)
-        data['VWAP'] = ((data['BidPrice_0'] * data['BidVolume_0']) + (data['AskPrice_0'] * data['AskVolume_0'])) / (data['BidVolume_0'] + data['AskVolume_0'])
-
-        # Calculate Relative Volume (RV)
-        data['RelativeVolume'] = data['BidVolume_0'] + data['AskVolume_0']
-
         # Fill missing values
         data = data.fillna(method='ffill').fillna(method='bfill')
 
@@ -127,7 +115,7 @@ class DataPipeline:
         data = apply_ema_all_data(self.ema, data)
 
         # Scale only specific features, leaving prices and volumes unscaled
-        features_to_scale = ['Spread', 'OrderSizeImbalance', 'VWAP', 'RelativeVolume', 'Midpoint', 'Midpoint_EMA']
+        features_to_scale = [ 'Midpoint', 'Midpoint_EMA']
         data[features_to_scale] = self.scaler.fit_transform(data[features_to_scale])
 
         # Ensure all numeric columns are of type float32 for TensorFlow compatibility

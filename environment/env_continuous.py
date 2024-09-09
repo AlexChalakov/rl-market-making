@@ -440,7 +440,7 @@ class ContinuousMarketEnv(BaseMarketEnv):
         super(ContinuousMarketEnv, self).__init__(data)
         # Adjust action space to include trade size (units) in addition to price adjustments
         self.action_space = spaces.Box(low=np.array([-1, -10]), high=np.array([1, 10]), dtype=np.float32)
-        self.observation_space = spaces.Box(low=0, high=1, shape=(94,), dtype=np.float32)
+        self.observation_space = spaces.Box(low=0, high=1, shape=(89,), dtype=np.float32)
         self.inventory = 0 # Inventory for the agent
         self.cash = 10000 # Cash for the agent
         self.trades = [] # List to store executed trades
@@ -499,7 +499,7 @@ class ContinuousMarketEnv(BaseMarketEnv):
         # for crypto data
         best_bid = self.data.iloc[self.current_step]['BidPrice_0']
         best_ask = self.data.iloc[self.current_step]['AskPrice_0']
-        
+        mid_price = (best_bid + best_ask) / 2
         spread = best_ask - best_bid
         # Enhanced action-to-order mapping logic
         bid_adjustment = bid_adjustment * spread
@@ -660,13 +660,12 @@ class ContinuousMarketEnv(BaseMarketEnv):
         if self.trades:
             last_trade = self.trades[-1]
             trade_type, executed_price, trade_size = last_trade
-            
 
             # Calculate slippage: difference between expected execution price and actual execution price
             slippage = abs(executed_price - mid_price)
             
             # Small penalty for slippage based on a fixed percentage of the mid-price
-            max_allowed_slippage = 0.01 * mid_price  # Allow up to 1% slippage without penalty
+            max_allowed_slippage = 0.001 * mid_price  # Allow up to 1% slippage without penalty
             if slippage > max_allowed_slippage:
                 self.execution_quality_reward = -slippage * 0.05  # Penalize only above threshold
             else:

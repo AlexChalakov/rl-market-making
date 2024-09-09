@@ -8,7 +8,7 @@ logging.basicConfig(level=logging.INFO, format='[%(asctime)s] %(message)s')
 LOGGER = logging.getLogger('crypto_rl_log')
 
 # ./data_pipeline/crypto_data.py
-MAX_BOOK_ROWS = 20  # Number of levels in the order book to capture
+MAX_BOOK_ROWS = 10  # Number of levels in the order book to capture
 DATA_PATH = "data/data_pipeline"  # Updated path to save data files
 TIMEZONE = datetime.timezone.utc  # Set timezone to UTC for consistency
 EXCHANGE = ccxt.binance({
